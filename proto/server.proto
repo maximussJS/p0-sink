@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+option go_package = "p0-sink/proto;serverpb";
+
+import "google/protobuf/empty.proto";
+
+package dtq.bs.server;
+
+service BlockStream {
+  rpc Blocks(BlocksRequest) returns (stream BlockWrapper);
+  rpc SingleBlock(SingleBlockRequest) returns (BlockWrapper);
+}
+
+service BlocksService {
+  rpc CurrentHead(google.protobuf.Empty) returns (BlockHead);
+}
+
+message BlocksRequest {
+  string dataset = 1;
+
+  oneof from {
+    int64 fromBlockNumber = 2;
+    string fromCursor = 3;
+  }
+
+  int64 toBlockNumber = 4;
+  optional int32 lag = 5;
+  optional ReorgAction onReorg = 6;
+
+  string compression = 7;
+  string format = 8;
+}
+
+message SingleBlockRequest {
+  string dataset = 1;
+
+  oneof block {
+    uint64 blockNumber = 2;
+    string blockHash = 3;
+  }
+
+  string compression = 4;
+  string format = 5;
+}
+
+enum Direction {
+  FORWARD = 0;
+  BACKWARD = 1;
+}
+enum ReorgAction {
+  ROLLBACK_AND_RESEND = 0;
+  RESEND = 1;
+  IGNORE = 2;
+}
+
+message BlockWrapper {
+  uint64 blockNumber = 1;
+  Direction direction = 2;
+  bool isHead = 3;
+  string id = 4;
+  string cursor = 5;
+  string url = 6;
+}
+
+message BlockHead {
+  uint64 number = 1;
+  string hash = 2;
+  string parentHash = 3;
+  uint64 timestamp = 4;
+}
