@@ -6,8 +6,8 @@ import (
 	"go.uber.org/fx"
 	"google.golang.org/grpc"
 	"io"
-	"log"
 	"p0-sink/internal/infrastructure"
+	"p0-sink/internal/types"
 	fx_utils "p0-sink/internal/utils/fx"
 	grpc_utils "p0-sink/internal/utils/grpc"
 	pb "p0-sink/proto"
@@ -15,7 +15,7 @@ import (
 )
 
 type IBlockStreamService interface {
-	GetBlockChannel(ctx context.Context, req *pb.BlocksRequest) (<-chan *pb.BlockWrapper, error)
+	GetReadChannel(ctx context.Context, req *pb.BlocksRequest, errorChannel types.ErrorChannel) types.BlockWrapperReadChannel
 }
 
 type blockStreamParams struct {
@@ -35,25 +35,44 @@ func FxBlockStreamService() fx.Option {
 	return fx_utils.AsProvider(newBlockStream, new(IBlockStreamService))
 }
 
-func newBlockStream(params blockStreamParams) IBlockStreamService {
-	return &blockStream{
+func newBlockStream(lc fx.Lifecycle, params blockStreamParams) IBlockStreamService {
+	bs := &blockStream{
 		streamConfig: params.StreamConfig,
 		logger:       params.Logger,
 	}
+
+	lc.Append(fx.Hook{
+		OnStop: func(_ context.Context) error {
+			err := bs.closeConnection()
+
+			if err != nil {
+				return err
+			}
+
+			bs.logger.Info("BlockStreamService stopped")
+
+			return nil
+		},
+	})
+
+	return bs
 }
 
-func (s *blockStream) GetBlockChannel(ctx context.Context, req *pb.BlocksRequest) (<-chan *pb.BlockWrapper, error) {
+func (s *blockStream) GetReadChannel(ctx context.Context, req *pb.BlocksRequest, errorChannel types.ErrorChannel) types.BlockWrapperReadChannel {
 	if err := s.createConnection(); err != nil {
-		return nil, err
+		errorChannel <- err
+		return nil
 	}
+
 	client := pb.NewBlockStreamClient(s.grpcConnection)
 
 	stream, err := client.Blocks(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("error calling Blocks: %w", err)
+		errorChannel <- fmt.Errorf("stream blocks error %v", err)
+		return nil
 	}
 
-	blockCh := make(chan *pb.BlockWrapper, s.streamConfig.BatchSize())
+	blockCh := make(types.BlockWrapperChannel, s.streamConfig.BatchSize())
 
 	go func() {
 		defer close(blockCh)
@@ -63,22 +82,23 @@ func (s *blockStream) GetBlockChannel(ctx context.Context, req *pb.BlocksRequest
 				return
 			}
 			if err != nil {
-				s.logger.Error(fmt.Sprintf("error receiving block: %v", err))
+				if ctx.Err() != nil {
+					return
+				}
+				errorChannel <- fmt.Errorf("error receiving block: %w", err)
 				return
 			}
+
 			select {
-			case blockCh <- block:
 			case <-ctx.Done():
 				return
+			default:
+				blockCh <- block
 			}
 		}
 	}()
 
-	return blockCh, nil
-}
-
-func (s *blockStream) streamBlock() error {
-	return s.closeConnection()
+	return blockCh
 }
 
 func (s *blockStream) createConnection() error {
@@ -110,7 +130,7 @@ func (s *blockStream) closeConnection() error {
 		err := s.grpcConnection.Close()
 
 		if err != nil {
-			log.Printf("failed to close grpc connection: %v", err)
+			return fmt.Errorf("failed to close grpc connection: %v", err)
 		}
 	}
 

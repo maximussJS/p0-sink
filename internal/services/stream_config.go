@@ -76,7 +76,7 @@ func (s *streamConfig) Id() string {
 }
 
 func (s *streamConfig) GrpcUrl() string {
-	return "localhost:50051"
+	return "ssl://eth-bs.internal.troiszero.net"
 	return s.stream.Network.BlockStreamGrpcUrl
 }
 

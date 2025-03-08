@@ -6,6 +6,8 @@ var Module = fx.Options(
 	FxStateManagerService(),
 	FxStreamConfig(),
 	FxBlockStreamService(),
+	FxBlockOrderService(),
+	FxBatchSizeTrackerService(),
 	FxStreamCursorService(),
 	FxRunnerService(),
 )
