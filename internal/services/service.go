@@ -9,5 +9,7 @@ var Module = fx.Options(
 	FxBlockOrderService(),
 	FxBatchSizeTrackerService(),
 	FxStreamCursorService(),
+	FxBlockDownloaderService(),
+	FxBatchCollectorService(),
 	FxRunnerService(),
 )

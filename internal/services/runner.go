@@ -23,6 +23,8 @@ type runnerServiceParams struct {
 	BlockStream      IBlockStreamService
 	BlockOrder       IBlockOrderService
 	BatchSizeTracker IBatchSizeTrackerService
+	BlockDownloader  IBlockDownloaderService
+	BatchCollector   IBatchCollectorService
 }
 
 type runnerService struct {
@@ -33,6 +35,8 @@ type runnerService struct {
 	blockStream       IBlockStreamService
 	blockOrder        IBlockOrderService
 	batchSizeTracker  IBatchSizeTrackerService
+	blockDownloader   IBlockDownloaderService
+	batchCollector    IBatchCollectorService
 }
 
 func FxRunnerService() fx.Option {
@@ -46,6 +50,8 @@ func newRunnerService(lc fx.Lifecycle, params runnerServiceParams) IRunnerServic
 		blockStream:      params.BlockStream,
 		blockOrder:       params.BlockOrder,
 		batchSizeTracker: params.BatchSizeTracker,
+		blockDownloader:  params.BlockDownloader,
+		batchCollector:   params.BatchCollector,
 	}
 
 	lc.Append(fx.Hook{
@@ -130,16 +136,26 @@ func (s *runnerService) startPipeline(ctx context.Context, errorChannel types.Er
 		return
 	}
 
+	blockDownloaderReadChannel := s.blockDownloader.GetReadChannel(ctx, batchSizeTrackerReadChannel, errorChannel)
+
+	if blockDownloaderReadChannel == nil {
+		return
+	}
+
+	batchChannel := s.batchCollector.GetReadChannel(ctx, blockDownloaderReadChannel, errorChannel)
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case block := <-batchSizeTrackerReadChannel:
+		case block := <-batchChannel:
 			if block == nil {
 				return
 			}
 
-			s.logger.Info(fmt.Sprintf("block: %v", block.BlockNumber))
+			s.logger.Info(fmt.Sprintf("batch: %s", block.String()))
+
+			time.Sleep(time.Duration(4) * time.Second)
 		}
 	}
 }

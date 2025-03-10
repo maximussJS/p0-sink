@@ -6,6 +6,8 @@ import (
 	"go.uber.org/fx"
 	"p0-sink/internal/enums"
 	"p0-sink/internal/lib"
+	"p0-sink/internal/lib/compressors"
+	"p0-sink/internal/lib/serializers"
 	"p0-sink/internal/types"
 	fx_utils "p0-sink/internal/utils/fx"
 	pb "p0-sink/proto"
@@ -27,6 +29,8 @@ type IStreamConfig interface {
 	ReorgAction() pb.ReorgAction
 	Network() string
 	UpdateBatchSize(int)
+	Compressors() (input compressors.ICompressor, output compressors.ICompressor)
+	Serializer() serializers.ISerializer
 }
 
 type streamConfigParams struct {
@@ -121,6 +125,30 @@ func (s *streamConfig) Destination() enums.EDestinationType {
 
 func (s *streamConfig) Compression() enums.ECompression {
 	return s.sinkConfig.Compression
+}
+
+func (s *streamConfig) Compressors() (input compressors.ICompressor, output compressors.ICompressor) {
+	input = compressors.NewGzipCompressor()
+
+	switch s.Compression() {
+	case enums.ECompressionGzip:
+		return input, compressors.NewGzipCompressor()
+	case enums.ECompressionNone:
+		return input, compressors.NewNoneCompressor()
+	default:
+		panic(fmt.Sprintf("cannot find compressor for compression type: %s", s.Compression()))
+	}
+}
+
+func (s *streamConfig) Serializer() serializers.ISerializer {
+	switch s.Destination() {
+	case enums.EDestinationTypeNoop:
+		return serializers.NewNoopSerializer(s.Compression(), s.ReorgAction())
+	case enums.EDestinationTypeWebhook:
+		return serializers.NewWebhookSerializer(s.Compression(), s.ReorgAction())
+	default:
+		panic(fmt.Sprintf("cannot find serializer for destination type: %s", s.Destination()))
+	}
 }
 
 func (s *streamConfig) DestinationConfig() interface{} {

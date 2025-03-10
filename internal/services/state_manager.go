@@ -59,7 +59,7 @@ func newStateManagerService(params stateManagerServiceParams) IStateManagerServi
 func (s *stateManagerService) GetStream(ctx context.Context) (*types.Stream, error) {
 	path := fmt.Sprintf("/stream/%s", s.streamId)
 
-	responseBody, err := s.httpClient.Get(ctx, path)
+	responseBody, err := s.httpClient.Get(ctx, path, lib.EmptyHttpHeaders)
 
 	if err != nil {
 		return nil, fmt.Errorf("state manager get stream error: %w", err)
@@ -76,7 +76,7 @@ func (s *stateManagerService) GetStream(ctx context.Context) (*types.Stream, err
 func (s *stateManagerService) GetStatus(ctx context.Context) (*types.StatusResponse, error) {
 	path := fmt.Sprintf("/stream/%s/status", s.streamId)
 
-	responseBody, err := s.httpClient.Get(ctx, path)
+	responseBody, err := s.httpClient.Get(ctx, path, lib.EmptyHttpHeaders)
 	if err != nil {
 		return nil, fmt.Errorf("state manager get status error: %w", err)
 	}
@@ -97,7 +97,7 @@ func (s *stateManagerService) UpdateCursor(ctx context.Context, payload types.Up
 		return nil, fmt.Errorf("state manager update cursor: error marshaling payload: %w", err)
 	}
 
-	responseBody, err := s.httpClient.Patch(ctx, path, bytes.NewReader(payloadBytes))
+	responseBody, err := s.httpClient.Patch(ctx, path, lib.EmptyHttpHeaders, bytes.NewReader(payloadBytes))
 	if err != nil {
 		return nil, fmt.Errorf("state manager update cursor error: %w", err)
 	}
@@ -112,7 +112,7 @@ func (s *stateManagerService) UpdateCursor(ctx context.Context, payload types.Up
 
 func (s *stateManagerService) MarkAsRunning(ctx context.Context) error {
 	path := fmt.Sprintf("/stream/%s/state/status/running", s.streamId)
-	_, err := s.httpClient.Patch(ctx, path, nil)
+	_, err := s.httpClient.Patch(ctx, path, lib.EmptyHttpHeaders, nil)
 
 	if err != nil {
 		return fmt.Errorf("state manager mark as running error: %w", err)

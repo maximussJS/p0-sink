@@ -5,6 +5,7 @@ import (
 	"go.uber.org/fx"
 	"net/url"
 	"p0-sink/internal/lib"
+	"p0-sink/internal/lib/compressors"
 	"p0-sink/internal/types"
 	fx_utils "p0-sink/internal/utils/fx"
 	pb "p0-sink/proto"
@@ -16,33 +17,51 @@ type IBlockDownloaderService interface {
 		ctx context.Context,
 		inputChannel types.BlockWrapperReadChannel,
 		errorChannel types.ErrorChannel,
-	) types.BlockWrapperReadChannel
+	) types.DownloadedBlockReadChannel
 }
 
 type blockDownloaderServiceParams struct {
 	fx.In
+
+	StreamConfig IStreamConfig
 }
 
 type blockDownloaderService struct {
-	httpClient *lib.HttpClient
+	inputCompressor  compressors.ICompressor
+	outputCompressor compressors.ICompressor
+	httpClient       *lib.HttpClient
+	streamConfig     IStreamConfig
 }
 
 func FxBlockDownloaderService() fx.Option {
 	return fx_utils.AsProvider(newBlockDownloader, new(IBlockDownloaderService))
 }
 
-func newBlockDownloader(params blockDownloaderService) IBlockDownloaderService {
-	return &blockDownloaderService{
-		httpClient: lib.NewEmptyHttpClient(),
+func newBlockDownloader(lc fx.Lifecycle, params blockDownloaderServiceParams) IBlockDownloaderService {
+	s := &blockDownloaderService{
+		streamConfig: params.StreamConfig,
+		httpClient:   lib.NewEmptyHttpClient(),
 	}
+
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			inputCompressor, outputCompressor := params.StreamConfig.Compressors()
+
+			s.inputCompressor = inputCompressor
+			s.outputCompressor = outputCompressor
+			return nil
+		},
+	})
+
+	return s
 }
 
 func (s *blockDownloaderService) GetReadChannel(
 	ctx context.Context,
 	inputChannel types.BlockWrapperReadChannel,
-	_ types.ErrorChannel,
-) types.BlockWrapperReadChannel {
-	outputChannel := make(types.BlockWrapperChannel)
+	errorChannel types.ErrorChannel,
+) types.DownloadedBlockReadChannel {
+	outputChannel := make(types.DownloadedBlockChannel)
 
 	var block *pb.BlockWrapper
 	var ok bool
@@ -56,7 +75,15 @@ func (s *blockDownloaderService) GetReadChannel(
 					if !ok {
 						return // input channel closed
 					}
-					outputChannel <- block
+
+					downloadedBlock, err := s.downloadBlock(ctx, block)
+
+					if err != nil {
+						errorChannel <- err
+						return
+					}
+
+					outputChannel <- downloadedBlock
 				}
 			case <-ctx.Done():
 				return
@@ -67,7 +94,47 @@ func (s *blockDownloaderService) GetReadChannel(
 	return outputChannel
 }
 
-func PrepareBlockRequest(urlStr string) (string, map[string]string) {
+func (s *blockDownloaderService) downloadBlock(ctx context.Context, block *pb.BlockWrapper) (*types.DownloadedBlock, error) {
+	urlStr, headers := s.prepareBlockRequest(block)
+
+	resp, err := s.httpClient.Get(ctx, urlStr, headers)
+	if err != nil {
+		return nil, err
+	}
+
+	compressedData, err := s.inputToOutputCompress(resp)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &types.DownloadedBlock{
+		BlockWrapper: block,
+		Data:         compressedData,
+	}, nil
+}
+
+func (s *blockDownloaderService) inputToOutputCompress(data []byte) ([]byte, error) {
+	if s.inputCompressor == nil || s.outputCompressor == nil {
+		return data, nil
+	}
+
+	if s.inputCompressor.EncodingType() == s.outputCompressor.EncodingType() {
+		return data, nil
+	}
+
+	decompressedData, err := s.inputCompressor.Decompress(data)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return s.outputCompressor.Compress(decompressedData)
+}
+
+func (s *blockDownloaderService) prepareBlockRequest(block *pb.BlockWrapper) (string, map[string]string) {
+	urlStr := block.Url
+
 	headers := make(map[string]string)
 
 	if strings.HasPrefix(urlStr, "data:") {

@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+var EmptyHttpHeaders = make(map[string]string)
+
 type HttpClient struct {
 	client  *http.Client
 	url     string
@@ -34,8 +36,8 @@ func NewEmptyHttpClient() *HttpClient {
 	}
 }
 
-func (s *HttpClient) Get(ctx context.Context, path string) ([]byte, error) {
-	req, err := s.createRequest(ctx, http.MethodGet, path, nil)
+func (s *HttpClient) Get(ctx context.Context, path string, headers map[string]string) ([]byte, error) {
+	req, err := s.createRequest(ctx, http.MethodGet, path, headers, nil)
 
 	if err != nil {
 		return nil, fmt.Errorf("http client get request error: %w", err)
@@ -53,8 +55,8 @@ func (s *HttpClient) Get(ctx context.Context, path string) ([]byte, error) {
 	return responseBody, nil
 }
 
-func (s *HttpClient) Post(ctx context.Context, path string, body io.Reader) ([]byte, error) {
-	req, err := s.createRequest(ctx, http.MethodPost, path, body)
+func (s *HttpClient) Post(ctx context.Context, path string, headers map[string]string, body io.Reader) ([]byte, error) {
+	req, err := s.createRequest(ctx, http.MethodPost, path, headers, body)
 	if err != nil {
 		return nil, fmt.Errorf("http client post request error: %w", err)
 	}
@@ -71,8 +73,8 @@ func (s *HttpClient) Post(ctx context.Context, path string, body io.Reader) ([]b
 	return responseBody, nil
 }
 
-func (s *HttpClient) Patch(ctx context.Context, path string, body io.Reader) ([]byte, error) {
-	req, err := s.createRequest(ctx, http.MethodPatch, path, body)
+func (s *HttpClient) Patch(ctx context.Context, path string, headers map[string]string, body io.Reader) ([]byte, error) {
+	req, err := s.createRequest(ctx, http.MethodPatch, path, headers, body)
 	if err != nil {
 		return nil, fmt.Errorf("http client patch request error: %w", err)
 	}
@@ -89,13 +91,17 @@ func (s *HttpClient) Patch(ctx context.Context, path string, body io.Reader) ([]
 	return responseBody, nil
 }
 
-func (s *HttpClient) createRequest(ctx context.Context, method, path string, body io.Reader) (*http.Request, error) {
+func (s *HttpClient) createRequest(ctx context.Context, method, path string, headers map[string]string, body io.Reader) (*http.Request, error) {
 	requestPath := fmt.Sprintf("%s%s", s.url, path)
 
 	req, err := http.NewRequestWithContext(ctx, method, requestPath, body)
 
 	if err != nil {
 		return nil, fmt.Errorf("http client create request error: %w", err)
+	}
+
+	for key, value := range headers {
+		req.Header.Set(key, value)
 	}
 
 	for key, value := range s.headers {
