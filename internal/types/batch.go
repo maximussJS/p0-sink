@@ -92,6 +92,16 @@ func (b *Batch) Len() int {
 	return len(b.blocks)
 }
 
+func (b *Batch) HasHeadBlock() bool {
+	for _, block := range b.blocks {
+		if block.IsHead {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (b *Batch) String() string {
 	from, to, _ := b.GetBlockRange()
 	return fmt.Sprintf("Batch {Direction: %v, Range: %d-%d }", b.direction, from, to)
