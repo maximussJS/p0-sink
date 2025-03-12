@@ -7,6 +7,7 @@ import (
 	"p0-sink/internal/enums"
 	"p0-sink/internal/lib"
 	"p0-sink/internal/lib/compressors"
+	"p0-sink/internal/lib/payload_builders"
 	"p0-sink/internal/lib/serializers"
 	"p0-sink/internal/types"
 	fx_utils "p0-sink/internal/utils/fx"
@@ -148,6 +149,17 @@ func (s *streamConfig) Serializer() serializers.ISerializer {
 		return serializers.NewWebhookSerializer(s.Compression(), s.ReorgAction())
 	default:
 		panic(fmt.Sprintf("cannot find serializer for destination type: %s", s.Destination()))
+	}
+}
+
+func (s *streamConfig) PayloadBuilder() payload_builders.IPayloadBuilder {
+	switch s.Compression() {
+	case enums.ECompressionGzip:
+		return payload_builders.NewGzipJsonPayloadBuilder()
+	case enums.ECompressionNone:
+		return payload_builders.NewJsonPayloadBuilder()
+	default:
+		panic(fmt.Sprintf("cannot find payload builder for compression type: %s", s.Compression()))
 	}
 }
 
