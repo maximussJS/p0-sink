@@ -61,7 +61,7 @@ func (s *blockDownloaderService) GetReadChannel(
 	inputChannel types.BlockWrapperReadChannel,
 	errorChannel types.ErrorChannel,
 ) types.DownloadedBlockReadChannel {
-	outputChannel := make(types.DownloadedBlockChannel)
+	outputChannel := make(types.DownloadedBlockChannel, s.streamConfig.ChannelSize())
 
 	var block *pb.BlockWrapper
 	var ok bool

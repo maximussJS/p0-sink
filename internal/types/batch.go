@@ -3,9 +3,11 @@ package types
 import (
 	"fmt"
 	pb "p0-sink/proto"
+	"time"
 )
 
 type Batch struct {
+	start     time.Time
 	direction *pb.Direction
 	cursor    string
 	blocks    []*DownloadedBlock
@@ -13,6 +15,7 @@ type Batch struct {
 
 func NewBatch() *Batch {
 	return &Batch{
+		start:  time.Now(),
 		blocks: make([]*DownloadedBlock, 0),
 	}
 }
@@ -100,6 +103,10 @@ func (b *Batch) HasHeadBlock() bool {
 	}
 
 	return false
+}
+
+func (b *Batch) TimeElapsed() time.Duration {
+	return time.Since(b.start)
 }
 
 func (b *Batch) String() string {

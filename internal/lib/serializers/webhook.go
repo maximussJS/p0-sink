@@ -8,29 +8,29 @@ import (
 	pb "p0-sink/proto"
 )
 
-type NoopSerializer struct {
+type WebhookSerializer struct {
 	compression    enums.ECompression
 	reorgAction    pb.ReorgAction
 	payloadBuilder payload_builders.IPayloadBuilder
 }
 
-func NewNoopSerializer(
+func NewWebhookSerializer(
 	compression enums.ECompression,
 	reorgAction pb.ReorgAction,
 	payloadBuilder payload_builders.IPayloadBuilder,
 ) ISerializer {
-	return &NoopSerializer{
+	return &WebhookSerializer{
 		compression:    compression,
 		reorgAction:    reorgAction,
 		payloadBuilder: payloadBuilder,
 	}
 }
 
-func (s *NoopSerializer) Serialize(batch *types.Batch, encoding string) (*types.SerializedBatch, error) {
+func (s *WebhookSerializer) Serialize(batch *types.Batch, encoding string) (*types.SerializedBatch, error) {
 	blocks, err := batch.GetData()
 
 	if err != nil {
-		return nil, fmt.Errorf("noop seralizer: cannot get data from batch: %w", err)
+		return nil, fmt.Errorf("webhook seralizer: cannot get data from batch: %w", err)
 	}
 
 	size := 0
@@ -45,7 +45,7 @@ func (s *NoopSerializer) Serialize(batch *types.Batch, encoding string) (*types.
 		direction, err = batch.GetDirection()
 
 		if err != nil {
-			return nil, fmt.Errorf("noop seralizer: cannot get direction from batch: %w", err)
+			return nil, fmt.Errorf("webhook seralizer: cannot get direction from batch: %w", err)
 		}
 	} else {
 		direction = nil
@@ -54,7 +54,7 @@ func (s *NoopSerializer) Serialize(batch *types.Batch, encoding string) (*types.
 	payload, err := s.payloadBuilder.Build(blocks, direction)
 
 	if err != nil {
-		return nil, fmt.Errorf("noop seralizer: cannot build payload: %w", err)
+		return nil, fmt.Errorf("webhook seralizer: cannot build payload: %w", err)
 	}
 
 	return types.NewSerializedBatch(batch, payload, encoding, uint64(size))

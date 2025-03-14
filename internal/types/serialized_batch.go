@@ -2,21 +2,21 @@ package types
 
 import (
 	"fmt"
-	pb "p0-sink/proto"
+	"p0-sink/internal/enums"
+	directon_utils "p0-sink/internal/utils/direction"
 )
 
 type SerializedBatch struct {
 	Data              []byte
 	Encoding          string
 	Cursor            string
-	Direction         *pb.Direction
+	Direction         enums.DirectionString
 	BlockNumbers      []uint64
 	HasRealtimeBlocks bool
 	BilledBytes       uint64
-	BlockMetadata     string
 }
 
-func NewSerializedBatch(batch *Batch, serializedData []byte, encoding, metadata string, billedBytes uint64) (*SerializedBatch, error) {
+func NewSerializedBatch(batch *Batch, serializedData []byte, encoding string, billedBytes uint64) (*SerializedBatch, error) {
 	cursor, err := batch.GetCursor()
 
 	if err != nil {
@@ -39,28 +39,19 @@ func NewSerializedBatch(batch *Batch, serializedData []byte, encoding, metadata 
 		Data:              serializedData,
 		Encoding:          encoding,
 		Cursor:            cursor,
-		Direction:         direction,
+		Direction:         directon_utils.DirectionToArrow(direction),
 		BlockNumbers:      blockNumbers,
 		HasRealtimeBlocks: batch.HasHeadBlock(),
 		BilledBytes:       billedBytes,
-		BlockMetadata:     metadata,
 	}, nil
 }
 
-func (s *SerializedBatch) LastBlockNumber() (uint64, error) {
-	if len(s.BlockNumbers) == 0 {
-		return 0, fmt.Errorf("cannot get last block number from empty batch")
-	}
-
-	return s.BlockNumbers[len(s.BlockNumbers)-1], nil
+func (s *SerializedBatch) LastBlockNumber() uint64 {
+	return s.BlockNumbers[len(s.BlockNumbers)-1]
 }
 
-func (s *SerializedBatch) FirstBlockNumber() (uint64, error) {
-	if len(s.BlockNumbers) == 0 {
-		return 0, fmt.Errorf("cannot get first block number from empty batch")
-	}
-
-	return s.BlockNumbers[0], nil
+func (s *SerializedBatch) FirstBlockNumber() uint64 {
+	return s.BlockNumbers[0]
 }
 
 func (s *SerializedBatch) NumBlocks() int {

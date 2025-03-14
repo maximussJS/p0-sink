@@ -72,7 +72,7 @@ func (s *blockStream) GetReadChannel(ctx context.Context, req *pb.BlocksRequest,
 		return nil
 	}
 
-	blockCh := make(types.BlockWrapperChannel, s.streamConfig.BatchSize())
+	blockCh := make(types.BlockWrapperChannel, s.streamConfig.ChannelSize())
 
 	go func() {
 		defer close(blockCh)

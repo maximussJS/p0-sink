@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go.uber.org/fx"
 	"p0-sink/internal/constants"
+	custom_errors "p0-sink/internal/errors"
 	"p0-sink/internal/infrastructure"
 	"p0-sink/internal/types"
 	context_utils "p0-sink/internal/utils/context"
@@ -25,6 +26,8 @@ type runnerServiceParams struct {
 	BatchSizeTracker IBatchSizeTrackerService
 	BlockDownloader  IBlockDownloaderService
 	BatchCollector   IBatchCollectorService
+	BatchSerializer  IBatchSerializerService
+	BatchSender      IBatchSenderService
 }
 
 type runnerService struct {
@@ -37,6 +40,8 @@ type runnerService struct {
 	batchSizeTracker  IBatchSizeTrackerService
 	blockDownloader   IBlockDownloaderService
 	batchCollector    IBatchCollectorService
+	batchSerializer   IBatchSerializerService
+	batchSender       IBatchSenderService
 }
 
 func FxRunnerService() fx.Option {
@@ -52,6 +57,8 @@ func newRunnerService(lc fx.Lifecycle, params runnerServiceParams) IRunnerServic
 		batchSizeTracker: params.BatchSizeTracker,
 		blockDownloader:  params.BlockDownloader,
 		batchCollector:   params.BatchCollector,
+		batchSerializer:  params.BatchSerializer,
+		batchSender:      params.BatchSender,
 	}
 
 	lc.Append(fx.Hook{
@@ -105,6 +112,17 @@ func (s *runnerService) runPipeline() {
 			s.logger.Error(fmt.Sprintf("error running pipeline: %v", err))
 			cancelChildCtx()
 			time.Sleep(constants.PIPELINE_RETRY_DELAY)
+
+			if attempt == constants.PIPELINE_RETRY_MAX_ATTEMPTS {
+				s.logger.Error("pipeline failed after max attempts")
+				return
+			}
+
+			terminationErr, ok := err.(*custom_errors.StreamTerminationError)
+			if ok {
+				s.logger.Error(fmt.Sprintf("stream termination error: %v", terminationErr))
+				return
+			}
 		}
 	}
 }
@@ -120,42 +138,15 @@ func (s *runnerService) startPipeline(ctx context.Context, errorChannel types.Er
 
 	blockStreamReadChannel := s.blockStream.GetReadChannel(ctx, blockRequest, errorChannel)
 
-	if blockStreamReadChannel == nil {
-		return
-	}
-
 	blockOrderReadChannel := s.blockOrder.GetReadChannel(ctx, blockStreamReadChannel, errorChannel)
-
-	if blockOrderReadChannel == nil {
-		return
-	}
 
 	batchSizeTrackerReadChannel := s.batchSizeTracker.GetReadChannel(ctx, blockOrderReadChannel, errorChannel)
 
-	if batchSizeTrackerReadChannel == nil {
-		return
-	}
-
 	blockDownloaderReadChannel := s.blockDownloader.GetReadChannel(ctx, batchSizeTrackerReadChannel, errorChannel)
-
-	if blockDownloaderReadChannel == nil {
-		return
-	}
 
 	batchChannel := s.batchCollector.GetReadChannel(ctx, blockDownloaderReadChannel, errorChannel)
 
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case block := <-batchChannel:
-			if block == nil {
-				return
-			}
+	batchSerializerChannel := s.batchSerializer.GetReadChannel(ctx, batchChannel, errorChannel)
 
-			s.logger.Info(fmt.Sprintf("batch: %s", block.String()))
-
-			time.Sleep(time.Duration(4) * time.Second)
-		}
-	}
+	s.batchSender.ProcessChannel(ctx, batchSerializerChannel, errorChannel)
 }

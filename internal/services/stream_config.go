@@ -7,11 +7,13 @@ import (
 	"p0-sink/internal/enums"
 	"p0-sink/internal/lib"
 	"p0-sink/internal/lib/compressors"
+	"p0-sink/internal/lib/destinations"
 	"p0-sink/internal/lib/payload_builders"
 	"p0-sink/internal/lib/serializers"
 	"p0-sink/internal/types"
 	fx_utils "p0-sink/internal/utils/fx"
 	pb "p0-sink/proto"
+	"time"
 )
 
 type IStreamConfig interface {
@@ -26,12 +28,18 @@ type IStreamConfig interface {
 	BatchSize() int
 	DestinationConfig() interface{}
 	ElasticBatchEnabled() bool
-	Destination() enums.EDestinationType
+	DestinationType() enums.EDestinationType
+	Destination() destinations.IDestination
+	PayloadBuilder() payload_builders.IPayloadBuilder
 	ReorgAction() pb.ReorgAction
 	Network() string
 	UpdateBatchSize(int)
 	Compressors() (input compressors.ICompressor, output compressors.ICompressor)
 	Serializer() serializers.ISerializer
+	RetryDelay() time.Duration
+	RetryAttempts() int
+	ChannelSize() int
+	RetryStrategy() enums.ERetryStrategy
 }
 
 type streamConfigParams struct {
@@ -85,6 +93,10 @@ func (s *streamConfig) GrpcUrl() string {
 	return s.stream.Network.BlockStreamGrpcUrl
 }
 
+func (s *streamConfig) ChannelSize() int {
+	return 2000
+}
+
 func (s *streamConfig) BlocksRange() (fromBlock, toBlock int64, lag int32) {
 	return s.stream.FromBlock, s.stream.ToBlock, s.stream.LagFromRealtime
 }
@@ -105,6 +117,18 @@ func (s *streamConfig) Dataset() string {
 	return s.stream.Dataset.Value
 }
 
+func (s *streamConfig) RetryDelay() time.Duration {
+	return s.sinkConfig.RetryDelay
+}
+
+func (s *streamConfig) RetryAttempts() int {
+	return s.sinkConfig.RetryAttempts
+}
+
+func (s *streamConfig) RetryStrategy() enums.ERetryStrategy {
+	return s.sinkConfig.RetryStrategy
+}
+
 func (s *streamConfig) BatchSize() int {
 	return s.stream.MaxBatchSize
 }
@@ -113,7 +137,7 @@ func (s *streamConfig) ElasticBatchEnabled() bool {
 	return true
 }
 
-func (s *streamConfig) Destination() enums.EDestinationType {
+func (s *streamConfig) DestinationType() enums.EDestinationType {
 	switch s.stream.DestinationType {
 	case "webhook":
 		return enums.EDestinationTypeWebhook
@@ -142,13 +166,30 @@ func (s *streamConfig) Compressors() (input compressors.ICompressor, output comp
 }
 
 func (s *streamConfig) Serializer() serializers.ISerializer {
-	switch s.Destination() {
+	switch s.DestinationType() {
 	case enums.EDestinationTypeNoop:
-		return serializers.NewNoopSerializer(s.Compression(), s.ReorgAction())
+		return serializers.NewNoopSerializer(s.Compression(), s.ReorgAction(), s.PayloadBuilder())
 	case enums.EDestinationTypeWebhook:
-		return serializers.NewWebhookSerializer(s.Compression(), s.ReorgAction())
+		return serializers.NewWebhookSerializer(s.Compression(), s.ReorgAction(), s.PayloadBuilder())
 	default:
 		panic(fmt.Sprintf("cannot find serializer for destination type: %s", s.Destination()))
+	}
+}
+
+func (s *streamConfig) Destination() destinations.IDestination {
+	switch s.DestinationType() {
+	case enums.EDestinationTypeWebhook:
+		webhook, err := destinations.NewWebhookDestination(s.stream.Id, s.stream.DestinationEntity.Config)
+
+		if err != nil {
+			panic(fmt.Sprintf("cannot create webhook destination: %s", err))
+		}
+
+		return webhook
+	case enums.EDestinationTypeNoop:
+		return destinations.NewNoopDestination()
+	default:
+		panic(fmt.Sprintf("cannot find destination for destination type: %s", s.Destination()))
 	}
 }
 
@@ -172,7 +213,7 @@ func (s *streamConfig) Network() string {
 }
 
 func (s *streamConfig) ReorgAction() pb.ReorgAction {
-	if s.Destination() == enums.EDestinationTypeS3 {
+	if s.DestinationType() == enums.EDestinationTypeS3 {
 		return pb.ReorgAction_ROLLBACK_AND_RESEND
 	}
 

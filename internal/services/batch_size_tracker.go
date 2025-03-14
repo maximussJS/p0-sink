@@ -45,7 +45,7 @@ func (s *batchSizeTrackerService) GetReadChannel(
 	inputChannel types.BlockWrapperReadChannel,
 	_ types.ErrorChannel,
 ) types.BlockWrapperReadChannel {
-	outputChannel := make(types.BlockWrapperChannel)
+	outputChannel := make(types.BlockWrapperChannel, s.streamConfig.ChannelSize())
 
 	var block *pb.BlockWrapper
 	var ok bool

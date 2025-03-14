@@ -40,7 +40,7 @@ func (s *batchCollectorService) GetReadChannel(
 	inputChannel types.DownloadedBlockReadChannel,
 	errorChanel types.ErrorChannel,
 ) types.BatchReadChannel {
-	outputChannel := make(types.BatchChannel)
+	outputChannel := make(types.BatchChannel, s.streamConfig.ChannelSize())
 
 	var block *types.DownloadedBlock
 	var ok bool

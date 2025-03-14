@@ -61,7 +61,7 @@ func (s *blockOrderService) GetReadChannel(
 	inputChannel types.BlockWrapperReadChannel,
 	errorChannel types.ErrorChannel,
 ) types.BlockWrapperReadChannel {
-	outputChannel := make(types.BlockWrapperChannel, s.streamConfig.BatchSize())
+	outputChannel := make(types.BlockWrapperChannel, s.streamConfig.ChannelSize())
 
 	var block *pb.BlockWrapper
 	var ok bool
