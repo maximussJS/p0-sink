@@ -33,7 +33,7 @@ func NewWebhookDestination(streamId string, destinationConfig map[string]interfa
 }
 
 func (d *WebhookDestination) String() string {
-	return fmt.Sprintf("webhook destination: url %s, timeout %d", d.config.Url, d.config.Timeout)
+	return fmt.Sprintf("webhook destination: url %s, timeout %s", d.config.Url, d.config.Timeout)
 }
 
 func (d *WebhookDestination) Send(ctx context.Context, batch *types.ProcessedBatch) error {

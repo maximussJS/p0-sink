@@ -20,7 +20,7 @@ type IConfig interface {
 
 	GetMetricsUrl() string
 	GetMetricsEnabled() bool
-	GetMetricsInterval() int
+	GetMetricsInterval() time.Duration
 	GetMetricsJobName() string
 	GetMetricsInstanceName() string
 	GetMetricsDefaultEnabled() bool
@@ -106,8 +106,8 @@ func (c *config) GetMetricsEnabled() bool {
 	return c.MetricsEnabled
 }
 
-func (c *config) GetMetricsInterval() int {
-	return c.MetricsInterval
+func (c *config) GetMetricsInterval() time.Duration {
+	return time.Duration(c.MetricsInterval) * time.Second
 }
 
 func (c *config) GetMetricsJobName() string {

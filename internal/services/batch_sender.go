@@ -98,7 +98,7 @@ func (s *batchSenderService) SendWithRetry(
 		err := s.destination.Send(ctx, batch)
 
 		if err != nil {
-			s.logger.Error(fmt.Sprintf("error sending data: %v", err))
+			s.logger.Error(fmt.Sprintf("error sending %s: %v", batch.String(), err))
 
 			if s.isNotRetryableError(err) {
 				return errors.NewStreamTerminationError(fmt.Sprintf("error sending data: %v", err))
