@@ -15,7 +15,7 @@ import (
 )
 
 type IBlockStreamService interface {
-	GetReadChannel(ctx context.Context, req *pb.BlocksRequest, errorChannel types.ErrorChannel) types.BlockWrapperReadChannel
+	Channel(ctx context.Context, req *pb.BlocksRequest, errorChannel types.ErrorChannel) types.BlockReadonlyChannel
 }
 
 type blockStreamParams struct {
@@ -58,7 +58,11 @@ func newBlockStream(lc fx.Lifecycle, params blockStreamParams) IBlockStreamServi
 	return bs
 }
 
-func (s *blockStream) GetReadChannel(ctx context.Context, req *pb.BlocksRequest, errorChannel types.ErrorChannel) types.BlockWrapperReadChannel {
+func (s *blockStream) Channel(
+	ctx context.Context,
+	req *pb.BlocksRequest,
+	errorChannel types.ErrorChannel,
+) types.BlockReadonlyChannel {
 	if err := s.createConnection(); err != nil {
 		errorChannel <- err
 		return nil
@@ -72,7 +76,7 @@ func (s *blockStream) GetReadChannel(ctx context.Context, req *pb.BlocksRequest,
 		return nil
 	}
 
-	blockCh := make(types.BlockWrapperChannel, s.streamConfig.ChannelSize())
+	blockCh := make(types.BlockChannel, s.streamConfig.BatchSize())
 
 	go func() {
 		defer close(blockCh)

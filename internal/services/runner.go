@@ -19,15 +19,12 @@ type IRunnerService interface {
 type runnerServiceParams struct {
 	fx.In
 
-	Logger           infrastructure.ILogger
-	StreamCursor     IStreamCursorService
-	BlockStream      IBlockStreamService
-	BlockOrder       IBlockOrderService
-	BatchSizeTracker IBatchSizeTrackerService
-	BlockDownloader  IBlockDownloaderService
-	BatchCollector   IBatchCollectorService
-	BatchSerializer  IBatchSerializerService
-	BatchSender      IBatchSenderService
+	Logger         infrastructure.ILogger
+	StreamCursor   IStreamCursorService
+	BlockStream    IBlockStreamService
+	Batch          IBatchService
+	BatchProcessor IBatchProcessorService
+	BatchSender    IBatchSenderService
 }
 
 type runnerService struct {
@@ -36,11 +33,8 @@ type runnerService struct {
 	logger            infrastructure.ILogger
 	streamCursor      IStreamCursorService
 	blockStream       IBlockStreamService
-	blockOrder        IBlockOrderService
-	batchSizeTracker  IBatchSizeTrackerService
-	blockDownloader   IBlockDownloaderService
-	batchCollector    IBatchCollectorService
-	batchSerializer   IBatchSerializerService
+	batch             IBatchService
+	batchProcessor    IBatchProcessorService
 	batchSender       IBatchSenderService
 }
 
@@ -50,15 +44,12 @@ func FxRunnerService() fx.Option {
 
 func newRunnerService(lc fx.Lifecycle, params runnerServiceParams) IRunnerService {
 	r := &runnerService{
-		logger:           params.Logger,
-		streamCursor:     params.StreamCursor,
-		blockStream:      params.BlockStream,
-		blockOrder:       params.BlockOrder,
-		batchSizeTracker: params.BatchSizeTracker,
-		blockDownloader:  params.BlockDownloader,
-		batchCollector:   params.BatchCollector,
-		batchSerializer:  params.BatchSerializer,
-		batchSender:      params.BatchSender,
+		logger:         params.Logger,
+		streamCursor:   params.StreamCursor,
+		blockStream:    params.BlockStream,
+		batch:          params.Batch,
+		batchProcessor: params.BatchProcessor,
+		batchSender:    params.BatchSender,
 	}
 
 	lc.Append(fx.Hook{
@@ -136,17 +127,11 @@ func (s *runnerService) startPipeline(ctx context.Context, errorChannel types.Er
 
 	s.logger.Debug(fmt.Sprintf("block request: %v", blockRequest))
 
-	blockStreamReadChannel := s.blockStream.GetReadChannel(ctx, blockRequest, errorChannel)
+	blocksChannel := s.blockStream.Channel(ctx, blockRequest, errorChannel)
 
-	blockOrderReadChannel := s.blockOrder.GetReadChannel(ctx, blockStreamReadChannel, errorChannel)
+	batchChannel := s.batch.Channel(ctx, blocksChannel, errorChannel)
 
-	batchSizeTrackerReadChannel := s.batchSizeTracker.GetReadChannel(ctx, blockOrderReadChannel, errorChannel)
+	processedBatchChannel := s.batchProcessor.Channel(ctx, batchChannel, errorChannel)
 
-	blockDownloaderReadChannel := s.blockDownloader.GetReadChannel(ctx, batchSizeTrackerReadChannel, errorChannel)
-
-	batchChannel := s.batchCollector.GetReadChannel(ctx, blockDownloaderReadChannel, errorChannel)
-
-	batchSerializerChannel := s.batchSerializer.GetReadChannel(ctx, batchChannel, errorChannel)
-
-	s.batchSender.ProcessChannel(ctx, batchSerializerChannel, errorChannel)
+	s.batchSender.ProcessChannel(ctx, processedBatchChannel, errorChannel)
 }

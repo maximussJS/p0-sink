@@ -36,7 +36,7 @@ func (d *WebhookDestination) String() string {
 	return fmt.Sprintf("webhook destination: url %s, timeout %d", d.config.Url, d.config.Timeout)
 }
 
-func (d *WebhookDestination) Send(ctx context.Context, batch *types.SerializedBatch) error {
+func (d *WebhookDestination) Send(ctx context.Context, batch *types.ProcessedBatch) error {
 
 	_, err := d.httpClient.Post(ctx, "", d.getBatchHeaders(batch), bytes.NewReader(batch.Data))
 
@@ -47,7 +47,7 @@ func (d *WebhookDestination) Send(ctx context.Context, batch *types.SerializedBa
 	return nil
 }
 
-func (d *WebhookDestination) getBatchHeaders(batch *types.SerializedBatch) map[string]string {
+func (d *WebhookDestination) getBatchHeaders(batch *types.ProcessedBatch) map[string]string {
 	headers := make(map[string]string)
 
 	headers["Content-Type"] = "application/json"

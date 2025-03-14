@@ -26,36 +26,20 @@ func NewWebhookSerializer(
 	}
 }
 
-func (s *WebhookSerializer) Serialize(batch *types.Batch, encoding string) (*types.SerializedBatch, error) {
-	blocks, err := batch.GetData()
-
-	if err != nil {
-		return nil, fmt.Errorf("webhook seralizer: cannot get data from batch: %w", err)
-	}
-
+func (s *WebhookSerializer) Serialize(blocks []*types.DownloadedBlock, direction *pb.Direction) ([]byte, int, error) {
 	size := 0
+	data := make([][]byte, 0)
 
 	for _, block := range blocks {
-		size += len(block)
+		size += len(block.Data)
+		data = append(data, block.Data)
 	}
 
-	var direction *pb.Direction
-
-	if s.reorgAction == pb.ReorgAction_ROLLBACK_AND_RESEND {
-		direction, err = batch.GetDirection()
-
-		if err != nil {
-			return nil, fmt.Errorf("webhook seralizer: cannot get direction from batch: %w", err)
-		}
-	} else {
-		direction = nil
-	}
-
-	payload, err := s.payloadBuilder.Build(blocks, direction)
+	serialized, err := s.payloadBuilder.Build(data, direction)
 
 	if err != nil {
-		return nil, fmt.Errorf("webhook seralizer: cannot build payload: %w", err)
+		return nil, 0, fmt.Errorf("cannot serialize the blocks: %w", err)
 	}
 
-	return types.NewSerializedBatch(batch, payload, encoding, uint64(size))
+	return serialized, size, nil
 }

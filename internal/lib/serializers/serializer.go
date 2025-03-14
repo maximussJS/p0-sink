@@ -1,7 +1,10 @@
 package serializers
 
-import "p0-sink/internal/types"
+import (
+	"p0-sink/internal/types"
+	pb "p0-sink/proto"
+)
 
 type ISerializer interface {
-	Serialize(batch *types.Batch, encoding string) (*types.SerializedBatch, error)
+	Serialize(blocks []*types.DownloadedBlock, direction *pb.Direction) ([]byte, int, error)
 }

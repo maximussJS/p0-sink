@@ -11,7 +11,7 @@ func NewNoopDestination() IDestination {
 	return &NoopDestination{}
 }
 
-func (d *NoopDestination) Send(_ context.Context, _ *types.SerializedBatch) error {
+func (d *NoopDestination) Send(_ context.Context, _ *types.ProcessedBatch) error {
 	return nil
 }
 

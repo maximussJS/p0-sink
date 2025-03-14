@@ -10,23 +10,28 @@ type Batch struct {
 	start     time.Time
 	direction *pb.Direction
 	cursor    string
-	blocks    []*DownloadedBlock
+	blocks    []*pb.BlockWrapper
 }
 
 func NewBatch() *Batch {
 	return &Batch{
 		start:  time.Now(),
-		blocks: make([]*DownloadedBlock, 0),
+		blocks: make([]*pb.BlockWrapper, 0),
 	}
 }
 
-func (b *Batch) PushBlock(block *DownloadedBlock) error {
+func (b *Batch) GetBlocks() []*pb.BlockWrapper {
+	return b.blocks
+}
+
+func (b *Batch) PushBlock(block *pb.BlockWrapper) error {
 	if err := b.verifyDirection(block); err != nil {
 		return err
 	}
 
 	b.blocks = append(b.blocks, block)
 	b.cursor = block.Cursor
+
 	return nil
 }
 
@@ -49,19 +54,6 @@ func (b *Batch) GetBlockNumbers() ([]uint64, error) {
 	}
 
 	return blockNumbers, nil
-}
-
-func (b *Batch) GetData() ([][]byte, error) {
-	if !b.HasBlocks() {
-		return nil, fmt.Errorf("cannot get data from empty batch")
-	}
-
-	data := make([][]byte, 0)
-	for _, block := range b.blocks {
-		data = append(data, block.Data)
-	}
-
-	return data, nil
 }
 
 func (b *Batch) GetDirection() (*pb.Direction, error) {
@@ -110,11 +102,15 @@ func (b *Batch) TimeElapsed() time.Duration {
 }
 
 func (b *Batch) String() string {
-	from, to, _ := b.GetBlockRange()
-	return fmt.Sprintf("Batch {Direction: %v, Range: %d-%d }", b.direction, from, to)
+	from, to, err := b.GetBlockRange()
+
+	if err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf("Batch [%d-%d]", from, to)
 }
 
-func (b *Batch) verifyDirection(block *DownloadedBlock) error {
+func (b *Batch) verifyDirection(block *pb.BlockWrapper) error {
 	if b.direction == nil {
 		b.direction = &block.Direction
 		return nil

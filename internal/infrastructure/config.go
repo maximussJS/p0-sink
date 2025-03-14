@@ -66,7 +66,7 @@ func newConfig() IConfig {
 
 	cfg := &config{
 		StateManagerTimeout: 2000,
-		DownloadConcurrency: 16,
+		DownloadConcurrency: 500,
 	}
 
 	err = viper.Unmarshal(cfg)

@@ -15,7 +15,7 @@ import (
 )
 
 type IBatchSenderService interface {
-	ProcessChannel(ctx context.Context, inputChannel types.SerializedBatchReadChannel, errorChannel types.ErrorChannel)
+	ProcessChannel(ctx context.Context, inputChannel types.ProcessedBatchReadonlyChannel, errorChannel types.ErrorChannel)
 }
 
 type batchSenderServiceParams struct {
@@ -59,7 +59,7 @@ func newBatchSenderService(lc fx.Lifecycle, params batchSenderServiceParams) IBa
 
 func (s *batchSenderService) ProcessChannel(
 	ctx context.Context,
-	inputChannel types.SerializedBatchReadChannel,
+	inputChannel types.ProcessedBatchReadonlyChannel,
 	errorChannel types.ErrorChannel,
 ) {
 	for {
@@ -82,7 +82,7 @@ func (s *batchSenderService) ProcessChannel(
 
 func (s *batchSenderService) SendWithRetry(
 	ctx context.Context,
-	batch *types.SerializedBatch,
+	batch *types.ProcessedBatch,
 ) error {
 	retryDelay := lib.NewRetryDelay(s.retryStrategy)
 

@@ -4,18 +4,14 @@ import pb "p0-sink/proto"
 
 type ErrorChannel = chan error
 
-type BlockWrapperChannel = chan *pb.BlockWrapper
+type BlockChannel = chan *pb.BlockWrapper
 
-type BlockWrapperReadChannel = <-chan *pb.BlockWrapper
-
-type DownloadedBlockChannel = chan *DownloadedBlock
-
-type DownloadedBlockReadChannel = <-chan *DownloadedBlock
+type BlockReadonlyChannel = <-chan *pb.BlockWrapper
 
 type BatchChannel = chan *Batch
 
-type BatchReadChannel = <-chan *Batch
+type BatchReadonlyChannel = <-chan *Batch
 
-type SerializedBatchChannel = chan *SerializedBatch
+type ProcessedBatchChannel = chan *ProcessedBatch
 
-type SerializedBatchReadChannel = <-chan *SerializedBatch
+type ProcessedBatchReadonlyChannel = <-chan *ProcessedBatch

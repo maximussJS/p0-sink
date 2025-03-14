@@ -6,6 +6,6 @@ import (
 )
 
 type IDestination interface {
-	Send(ctx context.Context, batch *types.SerializedBatch) error
+	Send(ctx context.Context, batch *types.ProcessedBatch) error
 	String() string
 }

@@ -10,6 +10,17 @@ type DownloadedBlock struct {
 	Data []byte
 }
 
+func NewDownloadedBlock(block *pb.BlockWrapper) *DownloadedBlock {
+	return &DownloadedBlock{
+		BlockWrapper: block,
+		Data:         nil,
+	}
+}
+
 func (b *DownloadedBlock) String() string {
 	return fmt.Sprintf("DownloadedBlock{BlockWrapper: %v, Data: %v}", b.BlockWrapper, b.Data)
+}
+
+func (b *DownloadedBlock) IsEmpty() bool {
+	return b.BlockWrapper == nil || b.Data == nil
 }

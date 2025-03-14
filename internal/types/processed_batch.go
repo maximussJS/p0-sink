@@ -6,7 +6,7 @@ import (
 	directon_utils "p0-sink/internal/utils/direction"
 )
 
-type SerializedBatch struct {
+type ProcessedBatch struct {
 	Data              []byte
 	Encoding          string
 	Cursor            string
@@ -16,7 +16,7 @@ type SerializedBatch struct {
 	BilledBytes       uint64
 }
 
-func NewSerializedBatch(batch *Batch, serializedData []byte, encoding string, billedBytes uint64) (*SerializedBatch, error) {
+func NewProcessedBatch(batch *Batch, serializedData []byte, encoding string, billedBytes uint64) (*ProcessedBatch, error) {
 	cursor, err := batch.GetCursor()
 
 	if err != nil {
@@ -35,7 +35,7 @@ func NewSerializedBatch(batch *Batch, serializedData []byte, encoding string, bi
 		return nil, fmt.Errorf("failed to get block numbers from batch: %v", err)
 	}
 
-	return &SerializedBatch{
+	return &ProcessedBatch{
 		Data:              serializedData,
 		Encoding:          encoding,
 		Cursor:            cursor,
@@ -46,18 +46,22 @@ func NewSerializedBatch(batch *Batch, serializedData []byte, encoding string, bi
 	}, nil
 }
 
-func (s *SerializedBatch) LastBlockNumber() uint64 {
+func (s *ProcessedBatch) LastBlockNumber() uint64 {
 	return s.BlockNumbers[len(s.BlockNumbers)-1]
 }
 
-func (s *SerializedBatch) FirstBlockNumber() uint64 {
+func (s *ProcessedBatch) FirstBlockNumber() uint64 {
 	return s.BlockNumbers[0]
 }
 
-func (s *SerializedBatch) NumBlocks() int {
+func (s *ProcessedBatch) NumBlocks() int {
 	return len(s.BlockNumbers)
 }
 
-func (s *SerializedBatch) String() string {
-	return fmt.Sprintf("SerializedBatch [%d-%d]", s.BlockNumbers[0], s.BlockNumbers[len(s.BlockNumbers)-1])
+func (s *ProcessedBatch) String() string {
+	return fmt.Sprintf("ProcessedBatch [%d-%d]", s.BlockNumbers[0], s.BlockNumbers[len(s.BlockNumbers)-1])
+}
+
+func (s *ProcessedBatch) LongString() string {
+	return fmt.Sprintf("ProcessedBatch [%v]", s.BlockNumbers)
 }
