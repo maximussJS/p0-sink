@@ -65,7 +65,7 @@ func newStreamConfig(lc fx.Lifecycle, params streamConfigParams) IStreamConfig {
 			stream, err := params.StateManager.GetStream(ctx)
 
 			if err != nil {
-				return fmt.Errorf("stream config get stream error: %w", err)
+				panic(fmt.Errorf("stream config get stream error: %w", err))
 			}
 
 			sinkConfig, err := lib.NewSinkConfig(stream.DestinationEntity.Config)

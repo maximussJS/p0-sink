@@ -36,6 +36,19 @@ func NewEmptyHttpClient() *HttpClient {
 	}
 }
 
+func NewHttpClientWithDisabledCompression() *HttpClient {
+	return &HttpClient{
+		headers: make(map[string]string),
+		client: &http.Client{
+			Timeout: 10 * time.Second,
+			Transport: &http.Transport{
+				DisableCompression: true,
+			},
+		},
+		url: "",
+	}
+}
+
 func (s *HttpClient) Get(ctx context.Context, path string, headers map[string]string) ([]byte, error) {
 	req, err := s.createRequest(ctx, http.MethodGet, path, headers, nil)
 
@@ -121,7 +134,12 @@ func (s *HttpClient) doRequest(req *http.Request) ([]byte, int, error) {
 		return nil, 0, fmt.Errorf("http client send request error: %w", err)
 	}
 
-	defer resp.Body.Close()
+	defer func() {
+		err := resp.Body.Close()
+		if err != nil {
+			fmt.Printf("http client close response body error: %v\n", err)
+		}
+	}()
 
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {

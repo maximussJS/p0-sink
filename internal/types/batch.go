@@ -10,21 +10,26 @@ type Batch struct {
 	start     time.Time
 	direction *pb.Direction
 	cursor    string
-	blocks    []*pb.BlockWrapper
+	blocks    []*Block
 }
 
 func NewBatch() *Batch {
 	return &Batch{
 		start:  time.Now(),
-		blocks: make([]*pb.BlockWrapper, 0),
+		blocks: make([]*Block, 0),
 	}
 }
 
-func (b *Batch) GetBlocks() []*pb.BlockWrapper {
+func (b *Batch) GetBlocks() []*Block {
 	return b.blocks
 }
 
-func (b *Batch) PushBlock(block *pb.BlockWrapper) error {
+func (b *Batch) PushBlock(blockWrapper *pb.BlockWrapper) error {
+	block, err := NewBlock(blockWrapper)
+	if err != nil {
+		return err
+	}
+
 	if err := b.verifyDirection(block); err != nil {
 		return err
 	}
@@ -110,7 +115,7 @@ func (b *Batch) String() string {
 	return fmt.Sprintf("Batch [%d-%d]", from, to)
 }
 
-func (b *Batch) verifyDirection(block *pb.BlockWrapper) error {
+func (b *Batch) verifyDirection(block *Block) error {
 	if b.direction == nil {
 		b.direction = &block.Direction
 		return nil

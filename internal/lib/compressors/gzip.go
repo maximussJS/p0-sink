@@ -3,6 +3,7 @@ package compressors
 import (
 	"bytes"
 	"compress/gzip"
+	"fmt"
 	"io"
 )
 
@@ -34,21 +35,20 @@ func (c *gzipCompressor) Compress(data []byte) ([]byte, error) {
 }
 
 func (c *gzipCompressor) Decompress(data []byte) ([]byte, error) {
-	b := bytes.NewBuffer(data)
+	reader := bytes.NewReader(data)
 
-	var r io.Reader
-	r, err := gzip.NewReader(b)
+	gzipReader, err := gzip.NewReader(reader)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create gzip reader: %w", err)
+	}
+	defer gzipReader.Close()
+
+	decompressedData, err := io.ReadAll(gzipReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read decompressed data: %w", err)
 	}
 
-	var resB bytes.Buffer
-	_, err = resB.ReadFrom(r)
-	if err != nil {
-		return nil, err
-	}
-
-	return resB.Bytes(), nil
+	return decompressedData, nil
 }
 
 func (c *gzipCompressor) EncodingType() string {

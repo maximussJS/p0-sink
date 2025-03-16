@@ -31,6 +31,9 @@ func (s *WebhookSerializer) Serialize(blocks []*types.DownloadedBlock, direction
 	data := make([][]byte, 0)
 
 	for _, block := range blocks {
+		if block.IsEmpty() {
+			return nil, 0, fmt.Errorf("cannot serialize empty block %v", blocks)
+		}
 		size += len(block.Data)
 		data = append(data, block.Data)
 	}
