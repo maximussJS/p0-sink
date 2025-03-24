@@ -91,7 +91,7 @@ func (s *blockDownloaderService) getBlockData(ctx context.Context, block *types.
 		return nil, err
 	}
 
-	s.logger.Info(fmt.Sprintf("Downloading batch %s %s", batchNumber, urlStr))
+	s.logger.Debug(fmt.Sprintf("Downloading batch %s", batchNumber))
 
 	resp, err := s.httpClient.Get(ctx, urlStr, lib.EmptyHttpHeaders)
 	if err != nil {

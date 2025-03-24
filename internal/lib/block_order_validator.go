@@ -108,7 +108,7 @@ func (v *BlockOrderValidator) setLastBlock(block *pb.BlockWrapper) {
 	v.lastBlockDirection = &block.Direction
 }
 
-func (v *BlockOrderValidator) constructError(block *pb.BlockWrapper) errors.InvalidBlockOrderError {
+func (v *BlockOrderValidator) constructError(block *pb.BlockWrapper) error {
 	var sb strings.Builder
 
 	sb.WriteString(fmt.Sprintf("invalid block order with reorg action: %s, ", v.reorgAction.String()))
@@ -121,5 +121,5 @@ func (v *BlockOrderValidator) constructError(block *pb.BlockWrapper) errors.Inva
 	sb.WriteString(fmt.Sprintf("current block number: %d", block.BlockNumber))
 	sb.WriteString(fmt.Sprintf("current block direction: %s", block.Direction.String()))
 
-	return errors.NewInvalidBlockOrderError(sb.String())
+	return fmt.Errorf(sb.String())
 }

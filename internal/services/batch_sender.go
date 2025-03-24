@@ -23,6 +23,7 @@ type batchSenderServiceParams struct {
 
 	Logger       infrastructure.ILogger
 	StreamConfig IStreamConfig
+	StreamCursor IStreamCursorService
 }
 
 type batchSenderService struct {
@@ -31,6 +32,7 @@ type batchSenderService struct {
 	retryDelay    time.Duration
 	retryStrategy enums.ERetryStrategy
 	destination   destinations.IDestination
+	streamCursor  IStreamCursorService
 }
 
 func FxBatchSenderService() fx.Option {
@@ -39,7 +41,8 @@ func FxBatchSenderService() fx.Option {
 
 func newBatchSenderService(lc fx.Lifecycle, params batchSenderServiceParams) IBatchSenderService {
 	bs := &batchSenderService{
-		logger: params.Logger,
+		logger:       params.Logger,
+		streamCursor: params.StreamCursor,
 	}
 
 	lc.Append(fx.Hook{
@@ -69,7 +72,13 @@ func (s *batchSenderService) ProcessChannel(
 				return
 			}
 
-			err := s.SendWithRetry(ctx, batch)
+			err := s.sendWithRetry(ctx, batch)
+			if err != nil {
+				errorChannel <- err
+				return
+			}
+
+			err = s.commit(ctx, *batch)
 			if err != nil {
 				errorChannel <- err
 				return
@@ -80,7 +89,22 @@ func (s *batchSenderService) ProcessChannel(
 	}
 }
 
-func (s *batchSenderService) SendWithRetry(
+func (s *batchSenderService) commit(ctx context.Context, batch types.ProcessedBatch) error {
+	start := time.Now()
+	err := s.streamCursor.Commit(ctx, batch)
+
+	if err != nil {
+		return fmt.Errorf("error committing %s %v", batch.String(), err)
+	}
+
+	elapsed := time.Since(start)
+
+	s.logger.Info(fmt.Sprintf("Commited %s. Took %s", batch.String(), elapsed))
+
+	return nil
+}
+
+func (s *batchSenderService) sendWithRetry(
 	ctx context.Context,
 	batch *types.ProcessedBatch,
 ) error {
@@ -109,7 +133,7 @@ func (s *batchSenderService) SendWithRetry(
 
 		elapsed := time.Since(start)
 
-		s.logger.Info(fmt.Sprintf("Sent %s. Commiting batch took %s", batch.String(), elapsed))
+		s.logger.Info(fmt.Sprintf("Sent %s. Took %s", batch.String(), elapsed))
 
 		return nil
 	}

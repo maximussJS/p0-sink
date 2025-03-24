@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"p0-sink/internal/errors"
 	"p0-sink/internal/lib"
 	"p0-sink/internal/lib/destination_configs"
 	"p0-sink/internal/types"
@@ -41,7 +40,7 @@ func (d *WebhookDestination) Send(ctx context.Context, batch *types.ProcessedBat
 	_, err := d.httpClient.Post(ctx, "", d.getBatchHeaders(batch), bytes.NewReader(batch.Data))
 
 	if err != nil {
-		return errors.NewDestinationDeliveryError(fmt.Sprintf("failed to send batch to webhook destination: %v", err))
+		return fmt.Errorf("failed to send batch to webhook destination: %v", err)
 	}
 
 	return nil

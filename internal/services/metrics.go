@@ -227,7 +227,11 @@ func (ms *metricsService) start(_ context.Context) error {
 			Collector(ms.sendLatency).
 			Collector(ms.commitLatency)
 
-		ms.ctx, ms.cancel = context.WithCancel(context.Background())
+		sendCtx, sendCancelFunc := context.WithCancel(context.Background())
+
+		ms.ctx = sendCtx
+		ms.cancel = sendCancelFunc
+
 		go ms.startSendingMetricsInterval()
 		ms.logger.Info("metrics sends enabled")
 		return nil

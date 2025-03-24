@@ -8,12 +8,14 @@ import (
 	"p0-sink/internal/errors"
 	"p0-sink/internal/infrastructure"
 	"p0-sink/internal/types"
+	"p0-sink/internal/utils/direction"
 	fx_utils "p0-sink/internal/utils/fx"
 	pb "p0-sink/proto"
 	"time"
 )
 
 type IStreamCursorService interface {
+	Commit(ctx context.Context, batch types.ProcessedBatch) error
 	GetBlockRequest() (*pb.BlocksRequest, error)
 	ReachedEnd() bool
 }
@@ -57,6 +59,37 @@ func newStreamCursorService(lc fx.Lifecycle, params streamCursorServiceParams) I
 	return sc
 }
 
+func (s *streamCursorService) Commit(ctx context.Context, batch types.ProcessedBatch) error {
+	start := time.Now()
+
+	timeDelta := int64(time.Since(s.lastCommitAt).Seconds())
+
+	payload := types.NewUpdateCursorPayload(batch, s.state, timeDelta)
+
+	result, err := s.stateManager.UpdateCursor(ctx, payload)
+
+	if err != nil {
+		return fmt.Errorf("failed to update cursor: %w", err)
+	}
+
+	s.lastCommitAt = start
+	lastBlockNumber := batch.LastBlockNumber()
+
+	s.state = types.State{
+		StreamId:        s.streamConfig.Id(),
+		Status:          string(result.Status),
+		LastCursor:      batch.Cursor,
+		LastBlockNumber: &lastBlockNumber,
+		BlocksSent:      s.state.BlocksSent + int64(batch.NumBlocks()),
+		BytesSent:       s.state.BytesSent + int64(batch.BilledBytes),
+		TimeSpent:       s.state.TimeSpent + timeDelta,
+		CursorUpdatedAt: time.Now().Unix(),
+		LastDirection:   int(direction.ArrowToDirection(batch.Direction)),
+	}
+
+	return nil
+}
+
 func (s *streamCursorService) GetBlockRequest() (*pb.BlocksRequest, error) {
 	fromBlock, toBlock, lag := s.streamConfig.BlocksRange()
 
@@ -96,7 +129,9 @@ func (s *streamCursorService) ReachedEnd() bool {
 		return false
 	}
 
-	return s.streamConfig.ToBlock() <= *s.state.LastBlockNumber
+	bn := s.state.LastBlockNumber
+
+	return s.streamConfig.ToBlock() <= int64(*bn)
 }
 
 func (s *streamCursorService) isRunning() bool {

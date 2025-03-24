@@ -83,6 +83,7 @@ func (s *blockStream) Channel(
 		for {
 			block, err := stream.Recv()
 			if err == io.EOF {
+				s.logger.Info("block stream closed")
 				return
 			}
 			if err != nil {

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	net_url "net/url"
 	"p0-sink/internal/enums"
-	"p0-sink/internal/errors"
 	map_utils "p0-sink/internal/utils/object"
 	validate_utils "p0-sink/internal/utils/validate"
 	"time"
@@ -22,25 +21,25 @@ func NewWebhookDestinationConfig(data map[string]interface{}) (*WebhookDestinati
 	var url string
 	if s, ok := map_utils.GetStringFromMap(data, "url"); ok {
 		if s == "" {
-			return nil, errors.NewInvalidDestinationConfigError("url is required")
+			return nil, fmt.Errorf("webhook config: url is required")
 		}
 
 		_, err := net_url.Parse(s)
 
 		if err != nil {
-			return nil, errors.NewInvalidDestinationConfigError("invalid url")
+			return nil, fmt.Errorf("webhook config: invalid url: %v", err)
 		}
 
 		url = s
 	} else {
-		return nil, errors.NewInvalidDestinationConfigError("url is required")
+		return nil, fmt.Errorf("webhook config: url is required")
 	}
 
 	var timeout time.Duration
 
 	if num, ok := map_utils.GetNumberFromMap(data, "timeout"); ok {
 		if num < 0 || num > 60 {
-			return nil, errors.NewInvalidDestinationConfigError("invalid timeout")
+			return nil, fmt.Errorf("webhook config: timeout must be between 0 and 60 seconds")
 		}
 		timeout = time.Duration(int(num)) * time.Second
 	} else {
@@ -55,7 +54,7 @@ func NewWebhookDestinationConfig(data map[string]interface{}) (*WebhookDestinati
 		if result.Valid {
 			headers = h
 		} else {
-			return nil, errors.NewInvalidDestinationConfigError(fmt.Sprintf("invalid headers: %v", result.Message))
+			return nil, fmt.Errorf("webhook config: invalid headers: %v", result.Message)
 		}
 	}
 
@@ -63,7 +62,7 @@ func NewWebhookDestinationConfig(data map[string]interface{}) (*WebhookDestinati
 	if b, ok := map_utils.GetBoolFromMap(data, "rollbackBeforeResend"); ok {
 		rollbackBeforeResend = b
 	} else {
-		return nil, errors.NewInvalidDestinationConfigError("rollbackBeforeResend is required")
+		return nil, fmt.Errorf("webhook config: rollbackBeforeResend is required")
 	}
 
 	var compression enums.ECompression
@@ -74,10 +73,10 @@ func NewWebhookDestinationConfig(data map[string]interface{}) (*WebhookDestinati
 		case string(enums.ECompressionGzip):
 			compression = enums.ECompressionGzip
 		default:
-			return nil, errors.NewInvalidDestinationConfigError(fmt.Sprintf("invalid webhook 	compression: %v", s))
+			return nil, fmt.Errorf("webhook config: invalid compression: %s", s)
 		}
 	} else {
-		return nil, errors.NewInvalidDestinationConfigError("compression is required")
+		return nil, fmt.Errorf("webhook config: compression is required")
 	}
 
 	return &WebhookDestinationConfig{

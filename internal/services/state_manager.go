@@ -15,7 +15,7 @@ import (
 type IStateManagerService interface {
 	GetStream(ctx context.Context) (*types.Stream, error)
 	GetStatus(ctx context.Context) (*types.StatusResponse, error)
-	UpdateCursor(ctx context.Context, payload types.UpdateCursorPayload) (*types.StatusResponse, error)
+	UpdateCursor(ctx context.Context, payload *types.UpdateCursorPayload) (*types.StatusResponse, error)
 	MarkAsRunning(ctx context.Context) error
 }
 
@@ -89,7 +89,7 @@ func (s *stateManagerService) GetStatus(ctx context.Context) (*types.StatusRespo
 	return &statusResp, nil
 }
 
-func (s *stateManagerService) UpdateCursor(ctx context.Context, payload types.UpdateCursorPayload) (*types.StatusResponse, error) {
+func (s *stateManagerService) UpdateCursor(ctx context.Context, payload *types.UpdateCursorPayload) (*types.StatusResponse, error) {
 	path := fmt.Sprintf("/stream/%s/state/cursor", s.streamId)
 
 	payloadBytes, err := json.Marshal(payload)

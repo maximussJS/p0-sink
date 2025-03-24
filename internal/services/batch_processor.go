@@ -116,8 +116,6 @@ func (s *batchProcessorService) process(
 		return nil, err
 	}
 
-	fmt.Printf("downloadedBlocks: %v\n", string(downloadedBlocks[0].Data))
-
 	serialized, size, err := s.serialize(batch, downloadedBlocks)
 
 	if err != nil {

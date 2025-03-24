@@ -5,7 +5,7 @@ type State struct {
 	Status            string  `json:"status"`
 	TerminationReason *string `json:"terminationReason"`
 	LastCursor        string  `json:"lastCursor"`
-	LastBlockNumber   *int64  `json:"lastBlockNumber"`
+	LastBlockNumber   *uint64 `json:"lastBlockNumber"`
 	BlocksSent        int64   `json:"blocksSent"`
 	BytesSent         int64   `json:"bytesSent"`
 	TimeSpent         int64   `json:"timeSpent"`

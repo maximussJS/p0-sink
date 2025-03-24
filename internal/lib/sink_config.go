@@ -3,7 +3,6 @@ package lib
 import (
 	"fmt"
 	"p0-sink/internal/enums"
-	"p0-sink/internal/errors"
 	map_utils "p0-sink/internal/utils/object"
 	"time"
 )
@@ -21,7 +20,7 @@ func NewSinkConfig(data map[string]interface{}) (*SinkConfig, error) {
 	var retryAttempts int
 	if num, ok := map_utils.GetNumberFromMap(data, "retryAttempts"); ok {
 		if num < 0 || num > 99 {
-			return nil, errors.NewInvalidSinkConfigError(fmt.Sprintf("invalid retryAttempts: %v", num))
+			return nil, fmt.Errorf("sink config: retryAttempts must be between 0 and 99")
 		}
 		retryAttempts = int(num)
 	} else {
@@ -31,7 +30,7 @@ func NewSinkConfig(data map[string]interface{}) (*SinkConfig, error) {
 	var retryDelay time.Duration
 	if num, ok := map_utils.GetNumberFromMap(data, "retryDelay"); ok {
 		if num < 0 || num > 60 {
-			return nil, errors.NewInvalidSinkConfigError(fmt.Sprintf("invalid retryDelay: %v", num))
+			return nil, fmt.Errorf("sink config: retryDelay must be between 0 and 60 seconds")
 		}
 		retryDelay = time.Duration(int(num)) * time.Second
 	} else {
@@ -48,7 +47,7 @@ func NewSinkConfig(data map[string]interface{}) (*SinkConfig, error) {
 		case string(enums.ERetryStrategyExponential):
 			retryStrategy = enums.ERetryStrategyExponential
 		default:
-			return nil, errors.NewInvalidSinkConfigError(fmt.Sprintf("invalid retryStrategy: %v", s))
+			return nil, fmt.Errorf("sink config: invalid retryStrategy: %v", s)
 		}
 	} else {
 		retryStrategy = enums.ERetryStrategyFixed
@@ -73,7 +72,7 @@ func NewSinkConfig(data map[string]interface{}) (*SinkConfig, error) {
 		case string(enums.ECompressionLz4):
 			compression = enums.ECompressionLz4
 		default:
-			return nil, errors.NewInvalidSinkConfigError(fmt.Sprintf("invalid compression: %v", s))
+			return nil, fmt.Errorf("sink config: invalid compression: %v", s)
 		}
 	} else {
 		compression = enums.ECompressionNone
