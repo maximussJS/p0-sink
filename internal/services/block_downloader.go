@@ -22,11 +22,13 @@ type blockDownloaderServiceParams struct {
 
 	Logger       infrastructure.ILogger
 	StreamConfig IStreamConfig
+	Metrics      IMetricsService
 }
 
 type blockDownloaderService struct {
 	inputCompressor  compressors.ICompressor
 	outputCompressor compressors.ICompressor
+	metrics          IMetricsService
 	logger           infrastructure.ILogger
 	blockDataMap     map[string][]byte
 	blockDataMapLock *sync.RWMutex
@@ -42,6 +44,7 @@ func newBlockDownloaderService(lc fx.Lifecycle, params blockDownloaderServicePar
 		logger:           params.Logger,
 		blockDataMap:     make(map[string][]byte),
 		blockDataMapLock: &sync.RWMutex{},
+		metrics:          params.Metrics,
 		httpClient:       lib.NewHttpClientWithDisabledCompression(),
 	}
 
@@ -93,9 +96,18 @@ func (s *blockDownloaderService) getBlockData(ctx context.Context, block *types.
 
 	s.logger.Debug(fmt.Sprintf("Downloading batch %s", batchNumber))
 
-	resp, err := s.httpClient.Get(ctx, urlStr, lib.EmptyHttpHeaders)
+	resp, err := s.metrics.MeasureDownloadLatency(func() ([]byte, error) {
+		resp, err := s.httpClient.Get(ctx, urlStr, lib.EmptyHttpHeaders)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to download block: %w", err)
+		}
+
+		return resp, nil
+	})
+
 	if err != nil {
-		return nil, fmt.Errorf("failed to download block: %w", err)
+		return nil, err
 	}
 
 	s.blockDataMap[batchNumber] = resp
@@ -110,13 +122,29 @@ func (s *blockDownloaderService) inputToOutputCompress(data []byte) ([]byte, err
 		return data, nil
 	}
 
-	decompressedData, err := s.inputCompressor.Decompress(data)
+	decompressedData, err := s.metrics.MeasureDecompressLatency(func() ([]byte, error) {
+		data, err := s.inputCompressor.Decompress(data)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to decompress data with %s : %w", s.inputCompressor.EncodingType(), err)
+		}
+
+		return data, nil
+	})
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to decompress data: %w", err)
+		return nil, err
 	}
 
-	return s.outputCompressor.Compress(decompressedData)
+	return s.metrics.MeasureCompressLatency(func() ([]byte, error) {
+		data, err := s.outputCompressor.Compress(decompressedData)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to compress data with %s : %w", s.outputCompressor.EncodingType(), err)
+		}
+
+		return data, nil
+	})
 }
 
 func (s *blockDownloaderService) prepareUrl(urlStr string) (string, error) {

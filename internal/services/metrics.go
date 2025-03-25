@@ -14,19 +14,19 @@ import (
 )
 
 type IMetricsService interface {
-	IncTotalBlocksSent()
-	IncTotalBytesSent(bytes int)
+	IncTotalBlocksSent(num int)
+	IncTotalBytesSent(bytes uint64)
 	IncTotalBatchesSent()
 	IncErrorsCount()
 	IncRetriesCount()
 	SetLastBlockSentAt()
-	MeasureDownloadLatency(fn func())
+	MeasureDownloadLatency(fn func() ([]byte, error)) ([]byte, error)
 	MeasureFilterLatency(fn func())
-	MeasureDecompressLatency(fn func())
-	MeasureCompressLatency(fn func())
-	MeasureSerializeLatency(fn func())
-	MeasureSendLatency(fn func())
-	MeasureCommitLatency(fn func())
+	MeasureDecompressLatency(fn func() ([]byte, error)) ([]byte, error)
+	MeasureCompressLatency(fn func() ([]byte, error)) ([]byte, error)
+	MeasureSerializeLatency(fn func() ([]byte, int, error)) ([]byte, int, error)
+	MeasureSendLatency(fn func() error) error
+	MeasureCommitLatency(fn func() error) error
 }
 
 type metricsServiceParams struct {
@@ -145,11 +145,11 @@ func newMetricsService(lc fx.Lifecycle, params metricsServiceParams) IMetricsSer
 	return ms
 }
 
-func (ms *metricsService) IncTotalBlocksSent() {
-	ms.totalBlocksSent.Inc()
+func (ms *metricsService) IncTotalBlocksSent(num int) {
+	ms.totalBlocksSent.Add(float64(num))
 }
 
-func (ms *metricsService) IncTotalBytesSent(bytes int) {
+func (ms *metricsService) IncTotalBytesSent(bytes uint64) {
 	ms.totalBytesSent.Add(float64(bytes))
 }
 
@@ -169,32 +169,44 @@ func (ms *metricsService) SetLastBlockSentAt() {
 	ms.lastBlockSentAt.SetToCurrentTime()
 }
 
-func (ms *metricsService) MeasureDownloadLatency(fn func()) {
-	ms.measure(fn, ms.downloadLatency)
+func (ms *metricsService) MeasureDownloadLatency(fn func() ([]byte, error)) ([]byte, error) {
+	timer := prometheus.NewTimer(ms.downloadLatency)
+	defer func() {
+		duration := timer.ObserveDuration()
+		ms.downloadLatency.Observe(float64(duration.Milliseconds()))
+	}()
+
+	return fn()
 }
 
 func (ms *metricsService) MeasureFilterLatency(fn func()) {
 	ms.measure(fn, ms.filterLatency)
 }
 
-func (ms *metricsService) MeasureDecompressLatency(fn func()) {
-	ms.measure(fn, ms.decompressLatency)
+func (ms *metricsService) MeasureDecompressLatency(fn func() ([]byte, error)) ([]byte, error) {
+	return ms.measureWithBytes(fn, ms.decompressLatency)
 }
 
-func (ms *metricsService) MeasureCompressLatency(fn func()) {
-	ms.measure(fn, ms.compressLatency)
+func (ms *metricsService) MeasureCompressLatency(fn func() ([]byte, error)) ([]byte, error) {
+	return ms.measureWithBytes(fn, ms.compressLatency)
 }
 
-func (ms *metricsService) MeasureSerializeLatency(fn func()) {
-	ms.measure(fn, ms.serializeLatency)
+func (ms *metricsService) MeasureSerializeLatency(fn func() ([]byte, int, error)) ([]byte, int, error) {
+	timer := prometheus.NewTimer(ms.serializeLatency)
+	defer func() {
+		duration := timer.ObserveDuration()
+		ms.serializeLatency.Observe(float64(duration.Milliseconds()))
+	}()
+
+	return fn()
 }
 
-func (ms *metricsService) MeasureSendLatency(fn func()) {
-	ms.measure(fn, ms.sendLatency)
+func (ms *metricsService) MeasureSendLatency(fn func() error) error {
+	return ms.measureWithError(fn, ms.sendLatency)
 }
 
-func (ms *metricsService) MeasureCommitLatency(fn func()) {
-	ms.measure(fn, ms.commitLatency)
+func (ms *metricsService) MeasureCommitLatency(fn func() error) error {
+	return ms.measureWithError(fn, ms.commitLatency)
 }
 
 func (ms *metricsService) measure(fn func(), histogram prometheus.Histogram) {
@@ -204,6 +216,26 @@ func (ms *metricsService) measure(fn func(), histogram prometheus.Histogram) {
 	duration := start.ObserveDuration()
 
 	histogram.Observe(float64(duration.Milliseconds()))
+}
+
+func (ms *metricsService) measureWithBytes(fn func() ([]byte, error), histogram prometheus.Histogram) ([]byte, error) {
+	timer := prometheus.NewTimer(histogram)
+	defer func() {
+		duration := timer.ObserveDuration()
+		histogram.Observe(float64(duration.Milliseconds()))
+	}()
+
+	return fn()
+}
+
+func (ms *metricsService) measureWithError(fn func() error, histogram prometheus.Histogram) error {
+	timer := prometheus.NewTimer(histogram)
+	defer func() {
+		duration := timer.ObserveDuration()
+		histogram.Observe(float64(duration.Milliseconds()))
+	}()
+
+	return fn()
 }
 
 func (ms *metricsService) start(_ context.Context) error {

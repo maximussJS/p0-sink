@@ -26,6 +26,7 @@ type batchProcessorServiceParams struct {
 
 	StreamConfig    IStreamConfig
 	BlockDownloader IBlockDownloaderService
+	Metrics         IMetricsService
 	Config          infrastructure.IConfig
 	Logger          infrastructure.ILogger
 }
@@ -33,6 +34,7 @@ type batchProcessorServiceParams struct {
 type batchProcessorService struct {
 	serializer      serializers.ISerializer
 	streamConfig    IStreamConfig
+	metrics         IMetricsService
 	blockDownloader IBlockDownloaderService
 	logger          infrastructure.ILogger
 	encoding        string
@@ -49,6 +51,7 @@ func newBatchProcessor(lc fx.Lifecycle, params batchProcessorServiceParams) IBat
 		streamConfig:    params.StreamConfig,
 		blockDownloader: params.BlockDownloader,
 		logger:          params.Logger,
+		metrics:         params.Metrics,
 	}
 
 	lc.Append(fx.Hook{
@@ -126,21 +129,23 @@ func (s *batchProcessorService) process(
 }
 
 func (s *batchProcessorService) serialize(batch *types.Batch, blocks []*types.DownloadedBlock) ([]byte, int, error) {
-	start := time.Now()
+	return s.metrics.MeasureSerializeLatency(func() ([]byte, int, error) {
+		start := time.Now()
 
-	direction, err := batch.GetDirection()
+		direction, err := batch.GetDirection()
 
-	if err != nil {
-		return nil, 0, err
-	}
+		if err != nil {
+			return nil, 0, err
+		}
 
-	serialized, size, err := s.serializer.Serialize(blocks, direction)
+		serialized, size, err := s.serializer.Serialize(blocks, direction)
 
-	if err != nil {
-		return nil, 0, err
-	}
+		if err != nil {
+			return nil, 0, err
+		}
 
-	s.logger.Info(fmt.Sprintf("%s serialized in %s", batch.String(), time.Since(start)))
+		s.logger.Info(fmt.Sprintf("%s serialized in %s", batch.String(), time.Since(start)))
 
-	return serialized, size, nil
+		return serialized, size, nil
+	})
 }

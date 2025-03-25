@@ -28,6 +28,7 @@ type batchSenderServiceParams struct {
 	Logger       infrastructure.ILogger
 	StreamConfig IStreamConfig
 	StreamCursor IStreamCursorService
+	Metrics      IMetricsService
 }
 
 type batchSenderService struct {
@@ -37,6 +38,7 @@ type batchSenderService struct {
 	retryStrategy enums.ERetryStrategy
 	destination   destinations.IDestination
 	streamCursor  IStreamCursorService
+	metrics       IMetricsService
 }
 
 func FxBatchSenderService() fx.Option {
@@ -47,6 +49,7 @@ func newBatchSenderService(lc fx.Lifecycle, params batchSenderServiceParams) IBa
 	bs := &batchSenderService{
 		logger:       params.Logger,
 		streamCursor: params.StreamCursor,
+		metrics:      params.Metrics,
 	}
 
 	lc.Append(fx.Hook{
@@ -79,19 +82,14 @@ func (s *batchSenderService) ProcessChannel(
 					return
 				}
 
-				err := s.sendWithRetry(ctx, batch)
+				done, err := s.process(ctx, batch)
+
 				if err != nil {
 					errorChannel <- err
 					return
 				}
 
-				err = s.commit(ctx, *batch)
-				if err != nil {
-					errorChannel <- err
-					return
-				}
-
-				if s.streamCursor.ReachedEnd() {
+				if done {
 					doneChannel <- struct{}{}
 					return
 				}
@@ -104,19 +102,57 @@ func (s *batchSenderService) ProcessChannel(
 	return doneChannel
 }
 
-func (s *batchSenderService) commit(ctx context.Context, batch types.ProcessedBatch) error {
-	start := time.Now()
-	err := s.streamCursor.Commit(ctx, batch)
-
+func (s *batchSenderService) process(ctx context.Context, batch *types.ProcessedBatch) (bool, error) {
+	err := s.sendWithRetry(ctx, batch)
 	if err != nil {
-		return fmt.Errorf("error committing %s %v", batch.String(), err)
+		return false, fmt.Errorf("error sending %s %v", batch.String(), err)
 	}
 
-	elapsed := time.Since(start)
+	err = s.commit(ctx, *batch)
+	if err != nil {
+		return false, fmt.Errorf("error committing %s %v", batch.String(), err)
+	}
 
-	s.logger.Info(fmt.Sprintf("Commited %s. Took %s", batch.String(), elapsed))
+	s.metrics.IncTotalBatchesSent()
+	s.metrics.IncTotalBytesSent(batch.BilledBytes)
+	s.metrics.IncTotalBlocksSent(batch.NumBlocks())
 
-	return nil
+	if s.streamCursor.ReachedEnd() {
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func (s *batchSenderService) commit(ctx context.Context, batch types.ProcessedBatch) error {
+	return s.metrics.MeasureCommitLatency(func() error {
+		start := time.Now()
+		err := s.streamCursor.Commit(ctx, batch)
+
+		if err != nil {
+			return fmt.Errorf("error committing %s %v", batch.String(), err)
+		}
+
+		elapsed := time.Since(start)
+
+		s.logger.Info(fmt.Sprintf("Commited %s. Took %s", batch.String(), elapsed))
+
+		return nil
+	})
+}
+
+func (s *batchSenderService) send(ctx context.Context, batch *types.ProcessedBatch) error {
+	return s.metrics.MeasureSendLatency(func() error {
+		err := s.sendWithRetry(ctx, batch)
+
+		if err != nil {
+			return err
+		}
+
+		s.metrics.SetLastBlockSentAt()
+
+		return nil
+	})
 }
 
 func (s *batchSenderService) sendWithRetry(
@@ -131,17 +167,19 @@ func (s *batchSenderService) sendWithRetry(
 		if attempt > 0 {
 			time.Sleep(retryDelay.CalculateDelay(attempt, s.retryDelay))
 
+			s.metrics.IncRetriesCount()
 			s.logger.Warn(fmt.Sprintf("retrying data send. attempt %d of %d", attempt, s.retryAttempts))
 		}
 
 		err := s.destination.Send(ctx, batch)
 
 		if err != nil {
-			s.logger.Error(fmt.Sprintf("error sending %s: %v", batch.String(), err))
-
 			if s.isNotRetryableError(err) {
 				return errors.NewStreamTerminationError(fmt.Sprintf("error sending data: %v", err))
 			}
+
+			s.metrics.IncErrorsCount()
+			s.logger.Error(fmt.Sprintf("error sending %s: %v", batch.String(), err))
 
 			continue
 		}
@@ -157,6 +195,6 @@ func (s *batchSenderService) sendWithRetry(
 	return errors.NewStreamTerminationError(fmt.Sprintf("max %d send attempts reached", s.retryAttempts))
 }
 
-func (s *batchSenderService) isNotRetryableError(err error) bool {
+func (s *batchSenderService) isNotRetryableError(_ error) bool {
 	return false
 }
