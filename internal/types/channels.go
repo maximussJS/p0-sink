@@ -2,6 +2,8 @@ package types
 
 import pb "p0-sink/proto"
 
+type DoneChannel = chan struct{}
+
 type ErrorChannel = chan error
 
 type BlockChannel = chan *pb.BlockWrapper

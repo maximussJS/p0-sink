@@ -28,6 +28,7 @@ type runnerServiceParams struct {
 }
 
 type runnerService struct {
+	shutdowner        fx.Shutdowner
 	pipelineCtx       context.Context
 	pipelineCtxCancel context.CancelFunc
 	logger            infrastructure.ILogger
@@ -42,7 +43,7 @@ func FxRunnerService() fx.Option {
 	return fx_utils.AsProvider(newRunnerService, new(IRunnerService))
 }
 
-func newRunnerService(lc fx.Lifecycle, params runnerServiceParams) IRunnerService {
+func newRunnerService(lc fx.Lifecycle, shutdowner fx.Shutdowner, params runnerServiceParams) IRunnerService {
 	r := &runnerService{
 		logger:         params.Logger,
 		streamCursor:   params.StreamCursor,
@@ -50,6 +51,7 @@ func newRunnerService(lc fx.Lifecycle, params runnerServiceParams) IRunnerServic
 		batch:          params.Batch,
 		batchProcessor: params.BatchProcessor,
 		batchSender:    params.BatchSender,
+		shutdowner:     shutdowner,
 	}
 
 	lc.Append(fx.Hook{
@@ -133,5 +135,17 @@ func (s *runnerService) startPipeline(ctx context.Context, errorChannel types.Er
 
 	processedBatchChannel := s.batchProcessor.Channel(ctx, batchChannel, errorChannel)
 
-	s.batchSender.ProcessChannel(ctx, processedBatchChannel, errorChannel)
+	doneChannel := s.batchSender.ProcessChannel(ctx, processedBatchChannel, errorChannel)
+
+	<-doneChannel
+
+	s.logger.Info("stream has been processed successfully. shutting down in 5 seconds")
+
+	time.Sleep(5 * time.Second)
+
+	err = s.shutdowner.Shutdown()
+
+	if err != nil {
+		s.logger.Error(fmt.Sprintf("error shutting down: %v", err))
+	}
 }

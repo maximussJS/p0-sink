@@ -15,7 +15,11 @@ import (
 )
 
 type IBatchSenderService interface {
-	ProcessChannel(ctx context.Context, inputChannel types.ProcessedBatchReadonlyChannel, errorChannel types.ErrorChannel)
+	ProcessChannel(
+		ctx context.Context,
+		inputChannel types.ProcessedBatchReadonlyChannel,
+		errorChannel types.ErrorChannel,
+	) types.DoneChannel
 }
 
 type batchSenderServiceParams struct {
@@ -64,29 +68,40 @@ func (s *batchSenderService) ProcessChannel(
 	ctx context.Context,
 	inputChannel types.ProcessedBatchReadonlyChannel,
 	errorChannel types.ErrorChannel,
-) {
-	for {
-		select {
-		case batch, ok := <-inputChannel:
-			if !ok {
-				return
-			}
+) types.DoneChannel {
+	doneChannel := make(types.DoneChannel)
 
-			err := s.sendWithRetry(ctx, batch)
-			if err != nil {
-				errorChannel <- err
-				return
-			}
+	go func() {
+		for {
+			select {
+			case batch, ok := <-inputChannel:
+				if !ok {
+					return
+				}
 
-			err = s.commit(ctx, *batch)
-			if err != nil {
-				errorChannel <- err
+				err := s.sendWithRetry(ctx, batch)
+				if err != nil {
+					errorChannel <- err
+					return
+				}
+
+				err = s.commit(ctx, *batch)
+				if err != nil {
+					errorChannel <- err
+					return
+				}
+
+				if s.streamCursor.ReachedEnd() {
+					doneChannel <- struct{}{}
+					return
+				}
+			case <-ctx.Done():
 				return
 			}
-		case <-ctx.Done():
-			return
 		}
-	}
+	}()
+
+	return doneChannel
 }
 
 func (s *batchSenderService) commit(ctx context.Context, batch types.ProcessedBatch) error {
