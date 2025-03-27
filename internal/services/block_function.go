@@ -63,6 +63,11 @@ func newBlockFunctionService(lc fx.Lifecycle, params blockFunctionServiceParams)
 
 			return nil
 		},
+		OnStop: func(_ context.Context) error {
+			bs.v8Ctx.Close()
+			bs.v8Isolate.Dispose()
+			return nil
+		},
 	})
 
 	return bs
