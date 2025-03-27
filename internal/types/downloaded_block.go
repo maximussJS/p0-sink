@@ -16,6 +16,13 @@ func NewDownloadedBlock(block *Block, data []byte) *DownloadedBlock {
 	}
 }
 
+func CopyWithNewData(block *DownloadedBlock, data []byte) *DownloadedBlock {
+	return &DownloadedBlock{
+		Block: block.Block,
+		Data:  data,
+	}
+}
+
 func (b *DownloadedBlock) String() string {
 	return fmt.Sprintf("DownloadedBlock{Block: %v, Data: %v}", b.Block, b.Data)
 }

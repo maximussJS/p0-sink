@@ -8,6 +8,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/push"
 	"go.uber.org/fx"
 	"os"
+	"p0-sink/internal/enums"
 	"p0-sink/internal/infrastructure"
 	fx_utils "p0-sink/internal/utils/fx"
 	"time"
@@ -26,7 +27,7 @@ type IMetricsService interface {
 	MeasureCompressLatency(fn func() ([]byte, error)) ([]byte, error)
 	MeasureSerializeLatency(fn func() ([]byte, int, error)) ([]byte, int, error)
 	MeasureSendLatency(fn func() error) error
-	MeasureCommitLatency(fn func() error) error
+	MeasureCommitLatency(fn func() (enums.EStatus, error)) (enums.EStatus, error)
 }
 
 type metricsServiceParams struct {
@@ -205,8 +206,14 @@ func (ms *metricsService) MeasureSendLatency(fn func() error) error {
 	return ms.measureWithError(fn, ms.sendLatency)
 }
 
-func (ms *metricsService) MeasureCommitLatency(fn func() error) error {
-	return ms.measureWithError(fn, ms.commitLatency)
+func (ms *metricsService) MeasureCommitLatency(fn func() (enums.EStatus, error)) (enums.EStatus, error) {
+	timer := prometheus.NewTimer(ms.commitLatency)
+	defer func() {
+		duration := timer.ObserveDuration()
+		ms.commitLatency.Observe(float64(duration.Milliseconds()))
+	}()
+
+	return fn()
 }
 
 func (ms *metricsService) measure(fn func(), histogram prometheus.Histogram) {
@@ -274,7 +281,9 @@ func (ms *metricsService) start(_ context.Context) error {
 }
 
 func (ms *metricsService) stop(_ context.Context) error {
-	ms.cancel()
+	if ms.cancel != nil {
+		ms.cancel()
+	}
 	ms.logger.Info("metrics sender stopped")
 	return nil
 }

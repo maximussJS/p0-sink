@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"p0-sink/internal/infrastructure"
 	"p0-sink/internal/lib"
-	"p0-sink/internal/lib/compressors"
 	"p0-sink/internal/types"
 	fx_utils "p0-sink/internal/utils/fx"
 	"sync"
@@ -26,8 +25,6 @@ type blockDownloaderServiceParams struct {
 }
 
 type blockDownloaderService struct {
-	inputCompressor  compressors.ICompressor
-	outputCompressor compressors.ICompressor
 	metrics          IMetricsService
 	logger           infrastructure.ILogger
 	blockDataMap     map[string][]byte
@@ -39,7 +36,7 @@ func FxBlockDownloaderService() fx.Option {
 	return fx_utils.AsProvider(newBlockDownloaderService, new(IBlockDownloaderService))
 }
 
-func newBlockDownloaderService(lc fx.Lifecycle, params blockDownloaderServiceParams) IBlockDownloaderService {
+func newBlockDownloaderService(params blockDownloaderServiceParams) IBlockDownloaderService {
 	s := &blockDownloaderService{
 		logger:           params.Logger,
 		blockDataMap:     make(map[string][]byte),
@@ -48,16 +45,6 @@ func newBlockDownloaderService(lc fx.Lifecycle, params blockDownloaderServicePar
 		httpClient:       lib.NewHttpClientWithDisabledCompression(),
 	}
 
-	lc.Append(fx.Hook{
-		OnStart: func(_ context.Context) error {
-			inputCompressor, outputCompressor := params.StreamConfig.Compressors()
-
-			s.inputCompressor = inputCompressor
-			s.outputCompressor = outputCompressor
-
-			return nil
-		},
-	})
 	return s
 }
 
@@ -85,7 +72,7 @@ func (s *blockDownloaderService) getBlockData(ctx context.Context, block *types.
 	batchNumber := block.BatchNumber()
 
 	if data, ok := s.blockDataMap[batchNumber]; ok {
-		return s.inputToOutputCompress(data[block.BytesStart : block.BytesEnd+1])
+		return data[block.BytesStart : block.BytesEnd+1], nil
 	}
 
 	urlStr, err := s.prepareUrl(block.Url)
@@ -112,39 +99,7 @@ func (s *blockDownloaderService) getBlockData(ctx context.Context, block *types.
 
 	s.blockDataMap[batchNumber] = resp
 
-	blockData := resp[block.BytesStart : block.BytesEnd+1]
-
-	return s.inputToOutputCompress(blockData)
-}
-
-func (s *blockDownloaderService) inputToOutputCompress(data []byte) ([]byte, error) {
-	if s.inputCompressor.EncodingType() == s.outputCompressor.EncodingType() {
-		return data, nil
-	}
-
-	decompressedData, err := s.metrics.MeasureDecompressLatency(func() ([]byte, error) {
-		data, err := s.inputCompressor.Decompress(data)
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to decompress data with %s : %w", s.inputCompressor.EncodingType(), err)
-		}
-
-		return data, nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return s.metrics.MeasureCompressLatency(func() ([]byte, error) {
-		data, err := s.outputCompressor.Compress(decompressedData)
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to compress data with %s : %w", s.outputCompressor.EncodingType(), err)
-		}
-
-		return data, nil
-	})
+	return resp[block.BytesStart : block.BytesEnd+1], nil
 }
 
 func (s *blockDownloaderService) prepareUrl(urlStr string) (string, error) {

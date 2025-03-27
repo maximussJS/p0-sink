@@ -15,7 +15,7 @@ import (
 )
 
 type IStreamCursorService interface {
-	Commit(ctx context.Context, batch types.ProcessedBatch) error
+	Commit(ctx context.Context, batch types.ProcessedBatch) (enums.EStatus, error)
 	GetBlockRequest() (*pb.BlocksRequest, error)
 	ReachedEnd() bool
 }
@@ -59,7 +59,7 @@ func newStreamCursorService(lc fx.Lifecycle, params streamCursorServiceParams) I
 	return sc
 }
 
-func (s *streamCursorService) Commit(ctx context.Context, batch types.ProcessedBatch) error {
+func (s *streamCursorService) Commit(ctx context.Context, batch types.ProcessedBatch) (enums.EStatus, error) {
 	start := time.Now()
 
 	timeDelta := int64(time.Since(s.lastCommitAt).Seconds())
@@ -69,7 +69,7 @@ func (s *streamCursorService) Commit(ctx context.Context, batch types.ProcessedB
 	result, err := s.stateManager.UpdateCursor(ctx, payload)
 
 	if err != nil {
-		return fmt.Errorf("failed to update cursor: %w", err)
+		return "", fmt.Errorf("failed to update cursor: %w", err)
 	}
 
 	s.lastCommitAt = start
@@ -77,7 +77,7 @@ func (s *streamCursorService) Commit(ctx context.Context, batch types.ProcessedB
 
 	s.state = types.State{
 		StreamId:        s.streamConfig.Id(),
-		Status:          string(result.Status),
+		Status:          result.Status,
 		LastCursor:      batch.Cursor,
 		LastBlockNumber: &lastBlockNumber,
 		BlocksSent:      s.state.BlocksSent + int64(batch.NumBlocks()),
@@ -87,11 +87,23 @@ func (s *streamCursorService) Commit(ctx context.Context, batch types.ProcessedB
 		LastDirection:   int(direction.ArrowToDirection(batch.Direction)),
 	}
 
-	return nil
+	return result.Status, nil
 }
 
 func (s *streamCursorService) GetBlockRequest() (*pb.BlocksRequest, error) {
 	fromBlock, toBlock, lag := s.streamConfig.BlocksRange()
+
+	reorgAction := s.streamConfig.ReorgAction()
+
+	return &pb.BlocksRequest{
+		Lag:           &lag,
+		From:          &pb.BlocksRequest_FromBlockNumber{FromBlockNumber: 0},
+		ToBlockNumber: toBlock,
+		Dataset:       s.streamConfig.Dataset(),
+		OnReorg:       &reorgAction,
+		Format:        string(enums.DatasetFormatJSON),
+		Compression:   string(enums.ECompressionGzip),
+	}, nil
 
 	if s.ReachedEnd() {
 		return nil, errors.NewStreamTerminationError("stream reached end")
@@ -100,8 +112,6 @@ func (s *streamCursorService) GetBlockRequest() (*pb.BlocksRequest, error) {
 	if !s.isRunning() && !s.isStarting() {
 		return nil, errors.NewStreamTerminationError(fmt.Sprintf("stream is not running or starting, status: %s", s.state.Status))
 	}
-
-	reorgAction := s.streamConfig.ReorgAction()
 
 	req := &pb.BlocksRequest{
 		Lag:           &lag,
@@ -135,9 +145,9 @@ func (s *streamCursorService) ReachedEnd() bool {
 }
 
 func (s *streamCursorService) isRunning() bool {
-	return s.state.Status == string(enums.StatusRunning)
+	return s.state.Status == enums.StatusRunning
 }
 
 func (s *streamCursorService) isStarting() bool {
-	return s.state.Status == string(enums.StatusStarting)
+	return s.state.Status == enums.StatusStarting
 }

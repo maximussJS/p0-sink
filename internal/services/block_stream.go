@@ -49,7 +49,7 @@ func newBlockStream(lc fx.Lifecycle, params blockStreamParams) IBlockStreamServi
 				return err
 			}
 
-			bs.logger.Info("BlockStreamService stopped")
+			bs.logger.Info("block stream service stopped")
 
 			return nil
 		},

@@ -12,5 +12,6 @@ var Module = fx.Options(
 	FxStreamCursorService(),
 	FxBatchProcessorService(),
 	FxBatchSenderService(),
+	FxBlockFunctionService(),
 	FxRunnerService(),
 )

@@ -34,7 +34,7 @@ func NewSinkConfig(data map[string]interface{}) (*SinkConfig, error) {
 		}
 		retryDelay = time.Duration(int(num)) * time.Second
 	} else {
-		retryDelay = 1 * time.Second
+		retryDelay = 5 * time.Second
 	}
 
 	var retryStrategy enums.ERetryStrategy

@@ -18,8 +18,9 @@ type IBatchSenderService interface {
 	ProcessChannel(
 		ctx context.Context,
 		inputChannel types.ProcessedBatchReadonlyChannel,
+		doneChannel types.DoneChannel,
 		errorChannel types.ErrorChannel,
-	) types.DoneChannel
+	)
 }
 
 type batchSenderServiceParams struct {
@@ -28,17 +29,20 @@ type batchSenderServiceParams struct {
 	Logger       infrastructure.ILogger
 	StreamConfig IStreamConfig
 	StreamCursor IStreamCursorService
+	StateManager IStateManagerService
 	Metrics      IMetricsService
 }
 
 type batchSenderService struct {
-	logger        infrastructure.ILogger
-	retryAttempts int
-	retryDelay    time.Duration
-	retryStrategy enums.ERetryStrategy
-	destination   destinations.IDestination
-	streamCursor  IStreamCursorService
-	metrics       IMetricsService
+	logger         infrastructure.ILogger
+	previousStatus enums.EStatus
+	retryAttempts  int
+	retryDelay     time.Duration
+	retryStrategy  enums.ERetryStrategy
+	destination    destinations.IDestination
+	streamCursor   IStreamCursorService
+	metrics        IMetricsService
+	stateManager   IStateManagerService
 }
 
 func FxBatchSenderService() fx.Option {
@@ -49,6 +53,7 @@ func newBatchSenderService(lc fx.Lifecycle, params batchSenderServiceParams) IBa
 	bs := &batchSenderService{
 		logger:       params.Logger,
 		streamCursor: params.StreamCursor,
+		stateManager: params.StateManager,
 		metrics:      params.Metrics,
 	}
 
@@ -58,6 +63,7 @@ func newBatchSenderService(lc fx.Lifecycle, params batchSenderServiceParams) IBa
 			bs.retryAttempts = params.StreamConfig.RetryAttempts()
 			bs.retryDelay = params.StreamConfig.RetryDelay()
 			bs.retryStrategy = params.StreamConfig.RetryStrategy()
+			bs.previousStatus = params.StreamConfig.Status()
 
 			bs.logger.Info(fmt.Sprintf("using %s ", bs.destination.String()))
 			return nil
@@ -70,10 +76,9 @@ func newBatchSenderService(lc fx.Lifecycle, params batchSenderServiceParams) IBa
 func (s *batchSenderService) ProcessChannel(
 	ctx context.Context,
 	inputChannel types.ProcessedBatchReadonlyChannel,
+	doneChannel types.DoneChannel,
 	errorChannel types.ErrorChannel,
-) types.DoneChannel {
-	doneChannel := make(types.DoneChannel)
-
+) {
 	go func() {
 		for {
 			select {
@@ -82,62 +87,86 @@ func (s *batchSenderService) ProcessChannel(
 					return
 				}
 
-				done, err := s.process(ctx, batch)
-
-				if err != nil {
-					errorChannel <- err
-					return
-				}
-
-				if done {
-					doneChannel <- struct{}{}
-					return
-				}
+				s.process(ctx, batch, doneChannel, errorChannel)
 			case <-ctx.Done():
 				return
 			}
 		}
 	}()
-
-	return doneChannel
 }
 
-func (s *batchSenderService) process(ctx context.Context, batch *types.ProcessedBatch) (bool, error) {
+func (s *batchSenderService) process(
+	ctx context.Context,
+	batch *types.ProcessedBatch,
+	doneChannel types.DoneChannel,
+	errorChannel types.ErrorChannel,
+) {
 	err := s.sendWithRetry(ctx, batch)
 	if err != nil {
-		return false, fmt.Errorf("error sending %s %v", batch.String(), err)
+		errorChannel <- fmt.Errorf("error sending batch %s %v", batch.String(), err)
+		return
 	}
 
-	err = s.commit(ctx, *batch)
+	status, err := s.commit(ctx, *batch)
 	if err != nil {
-		return false, fmt.Errorf("error committing %s %v", batch.String(), err)
+		errorChannel <- fmt.Errorf("error committing %s %v", batch.String(), err)
+		return
 	}
 
 	s.metrics.IncTotalBatchesSent()
 	s.metrics.IncTotalBytesSent(batch.BilledBytes)
 	s.metrics.IncTotalBlocksSent(batch.NumBlocks())
 
-	if s.streamCursor.ReachedEnd() {
-		return true, nil
-	}
-
-	return false, nil
-}
-
-func (s *batchSenderService) commit(ctx context.Context, batch types.ProcessedBatch) error {
-	return s.metrics.MeasureCommitLatency(func() error {
-		start := time.Now()
-		err := s.streamCursor.Commit(ctx, batch)
+	if status == enums.StatusStarting {
+		err := s.stateManager.MarkAsRunning(ctx)
 
 		if err != nil {
-			return fmt.Errorf("error committing %s %v", batch.String(), err)
+			errorChannel <- fmt.Errorf("error marking as running %v", err)
+			return
+		}
+
+		s.previousStatus = enums.StatusRunning
+
+		return
+	}
+
+	if s.previousStatus == enums.StatusRunning && status == enums.StatusPaused {
+		s.previousStatus = enums.StatusPaused
+		errorChannel <- errors.NewStreamTerminationError("stream was paused")
+		return
+	}
+
+	if s.previousStatus == enums.StatusRunning && status == enums.StatusFinished {
+		s.previousStatus = enums.StatusFinished
+		errorChannel <- errors.NewStreamTerminationError("stream was finished")
+		return
+	}
+
+	if status != enums.StatusRunning {
+		errorChannel <- errors.NewStreamTerminationError(fmt.Sprintf("stream has incorrect status %s", status))
+		return
+	}
+
+	if s.streamCursor.ReachedEnd() {
+		doneChannel <- struct{}{}
+		return
+	}
+}
+
+func (s *batchSenderService) commit(ctx context.Context, batch types.ProcessedBatch) (enums.EStatus, error) {
+	return s.metrics.MeasureCommitLatency(func() (enums.EStatus, error) {
+		start := time.Now()
+		status, err := s.streamCursor.Commit(ctx, batch)
+
+		if err != nil {
+			return "", fmt.Errorf("error committing %s %v", batch.String(), err)
 		}
 
 		elapsed := time.Since(start)
 
 		s.logger.Info(fmt.Sprintf("Commited %s. Took %s", batch.String(), elapsed))
 
-		return nil
+		return status, nil
 	})
 }
 
@@ -165,7 +194,9 @@ func (s *batchSenderService) sendWithRetry(
 		start := time.Now()
 
 		if attempt > 0 {
-			time.Sleep(retryDelay.CalculateDelay(attempt, s.retryDelay))
+			sleepTime := retryDelay.CalculateDelay(attempt, s.retryDelay)
+			s.logger.Warn(fmt.Sprintf("sleeping for %v before %d data send retry attempt", sleepTime, attempt))
+			time.Sleep(sleepTime)
 
 			s.metrics.IncRetriesCount()
 			s.logger.Warn(fmt.Sprintf("retrying data send. attempt %d of %d", attempt, s.retryAttempts))

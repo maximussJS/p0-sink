@@ -7,6 +7,7 @@ import (
 	"go.uber.org/fx"
 	"p0-sink/internal/infrastructure"
 	"p0-sink/internal/lib"
+	"p0-sink/internal/lib/compressors"
 	"p0-sink/internal/lib/serializers"
 	"p0-sink/internal/types"
 	fx_utils "p0-sink/internal/utils/fx"
@@ -27,19 +28,23 @@ type batchProcessorServiceParams struct {
 	StreamConfig    IStreamConfig
 	BlockDownloader IBlockDownloaderService
 	Metrics         IMetricsService
+	BlockFunction   IBlockFunctionService
 	Config          infrastructure.IConfig
 	Logger          infrastructure.ILogger
 }
 
 type batchProcessorService struct {
-	serializer      serializers.ISerializer
-	streamConfig    IStreamConfig
-	metrics         IMetricsService
-	blockDownloader IBlockDownloaderService
-	logger          infrastructure.ILogger
-	encoding        string
-	pool            pond.Pool
-	httpClient      *lib.HttpClient
+	inputCompressor  compressors.ICompressor
+	outputCompressor compressors.ICompressor
+	serializer       serializers.ISerializer
+	streamConfig     IStreamConfig
+	metrics          IMetricsService
+	blockFunction    IBlockFunctionService
+	blockDownloader  IBlockDownloaderService
+	logger           infrastructure.ILogger
+	encoding         string
+	pool             pond.Pool
+	httpClient       *lib.HttpClient
 }
 
 func FxBatchProcessorService() fx.Option {
@@ -50,17 +55,20 @@ func newBatchProcessor(lc fx.Lifecycle, params batchProcessorServiceParams) IBat
 	s := &batchProcessorService{
 		streamConfig:    params.StreamConfig,
 		blockDownloader: params.BlockDownloader,
+		blockFunction:   params.BlockFunction,
 		logger:          params.Logger,
 		metrics:         params.Metrics,
 	}
 
 	lc.Append(fx.Hook{
 		OnStart: func(_ context.Context) error {
-			s.serializer = params.StreamConfig.Serializer()
+			inputCompressor, outputCompressor := params.StreamConfig.Compressors()
 
-			_, outputCompressor := params.StreamConfig.Compressors()
+			s.inputCompressor = inputCompressor
+			s.outputCompressor = outputCompressor
 
 			s.encoding = outputCompressor.EncodingType()
+			s.serializer = params.StreamConfig.Serializer()
 
 			return nil
 		},
@@ -119,13 +127,61 @@ func (s *batchProcessorService) process(
 		return nil, err
 	}
 
-	serialized, size, err := s.serialize(batch, downloadedBlocks)
+	processedBlocks, err := s.processDownloadedBlocks(downloadedBlocks)
+
+	if err != nil {
+		return nil, err
+	}
+
+	serialized, size, err := s.serialize(batch, processedBlocks)
 
 	if err != nil {
 		return nil, err
 	}
 
 	return types.NewProcessedBatch(batch, serialized, s.encoding, uint64(size))
+}
+
+func (s *batchProcessorService) processDownloadedBlocks(
+	downloadedBlocks []*types.DownloadedBlock,
+) ([]*types.DownloadedBlock, error) {
+	data := make([]*types.DownloadedBlock, 0)
+
+	for _, block := range downloadedBlocks {
+		if s.streamConfig.FunctionEnabled() {
+			decompressedData, err := s.decompress(block.Data)
+
+			if err != nil {
+				return nil, err
+			}
+
+			processedData, err := s.blockFunction.ApplyFunction(decompressedData)
+
+			if err != nil {
+				return nil, err
+			}
+
+			compressedData, err := s.compress(processedData)
+
+			if err != nil {
+				return nil, err
+			}
+
+			data = append(data, types.CopyWithNewData(block, compressedData))
+
+			continue
+		}
+
+		blockData, err := s.inputToOutputCompress(block.Data)
+
+		if err != nil {
+			return nil, err
+		}
+
+		data = append(data, types.CopyWithNewData(block, blockData))
+	}
+
+	return data, nil
 }
 
 func (s *batchProcessorService) serialize(batch *types.Batch, blocks []*types.DownloadedBlock) ([]byte, int, error) {
@@ -147,5 +203,43 @@ func (s *batchProcessorService) serialize(batch *types.Batch, blocks []*types.Do
 		s.logger.Info(fmt.Sprintf("%s serialized in %s", batch.String(), time.Since(start)))
 
 		return serialized, size, nil
+	})
+}
+
+func (s *batchProcessorService) inputToOutputCompress(data []byte) ([]byte, error) {
+	if s.inputCompressor.EncodingType() == s.outputCompressor.EncodingType() {
+		return data, nil
+	}
+
+	decompressedData, err := s.decompress(data)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return s.compress(decompressedData)
+}
+
+func (s *batchProcessorService) decompress(data []byte) ([]byte, error) {
+	return s.metrics.MeasureDecompressLatency(func() ([]byte, error) {
+		data, err := s.inputCompressor.Decompress(data)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to decompress data with %s : %w", s.inputCompressor.EncodingType(), err)
+		}
+
+		return data, nil
+	})
+}
+
+func (s *batchProcessorService) compress(data []byte) ([]byte, error) {
+	return s.metrics.MeasureCompressLatency(func() ([]byte, error) {
+		data, err := s.outputCompressor.Compress(data)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to compress data with %s : %w", s.outputCompressor.EncodingType(), err)
+		}
+
+		return data, nil
 	})
 }

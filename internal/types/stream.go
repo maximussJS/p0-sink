@@ -20,6 +20,7 @@ type Stream struct {
 	FromBlock         int64                  `json:"fromBlock"`
 	ToBlock           int64                  `json:"toBlock"`
 	LagFromRealtime   int32                  `json:"lagFromRealtime"`
+	BlockFunction     *BlockFunction         `json:"blockFunction,omitempty"`
 	MaxBatchSize      int                    `json:"maxBatchSize"`
 	Flags             map[string]interface{} `json:"flags"`
 	CreatedAt         time.Time              `json:"createdAt"`

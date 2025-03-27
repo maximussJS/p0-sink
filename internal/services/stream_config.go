@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"go.uber.org/fx"
 	"p0-sink/internal/enums"
@@ -28,6 +29,9 @@ type IStreamConfig interface {
 	BatchSize() int
 	DestinationConfig() interface{}
 	ElasticBatchEnabled() bool
+	FunctionCode() ([]byte, error)
+	FunctionEnabled() bool
+	Status() enums.EStatus
 	DestinationType() enums.EDestinationType
 	Destination() destinations.IDestination
 	PayloadBuilder() payload_builders.IPayloadBuilder
@@ -97,6 +101,23 @@ func (s *streamConfig) ChannelSize() int {
 	return 2000
 }
 
+func (s *streamConfig) FunctionEnabled() bool {
+	return s.stream.BlockFunction != nil && s.stream.BlockFunction.Enabled
+}
+
+func (s *streamConfig) FunctionCode() ([]byte, error) {
+	if s.stream.BlockFunction == nil || !s.stream.BlockFunction.Enabled {
+		return nil, nil
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(*s.stream.BlockFunction.Code)
+	if err != nil {
+		return nil, fmt.Errorf("stream config function code decode error: %w", err)
+	}
+
+	return decoded, nil
+}
+
 func (s *streamConfig) BlocksRange() (fromBlock, toBlock int64, lag int32) {
 	return s.stream.FromBlock, s.stream.ToBlock, s.stream.LagFromRealtime
 }
@@ -127,6 +148,10 @@ func (s *streamConfig) RetryAttempts() int {
 
 func (s *streamConfig) RetryStrategy() enums.ERetryStrategy {
 	return s.sinkConfig.RetryStrategy
+}
+
+func (s *streamConfig) Status() enums.EStatus {
+	return s.stream.State.Status
 }
 
 func (s *streamConfig) BatchSize() int {

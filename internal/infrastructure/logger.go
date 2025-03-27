@@ -34,6 +34,8 @@ func newLogger(params loggerParams) ILogger {
 
 	config.Level.SetLevel(params.Config.GetLoggerLevel())
 
+	config.DisableStacktrace = true // set to false if you want stacktrace in logs
+
 	zapLogger, err := config.Build()
 
 	if err != nil {

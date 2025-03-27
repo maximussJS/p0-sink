@@ -6,9 +6,9 @@ type StreamTerminationError struct {
 	Err error
 }
 
-func NewStreamTerminationError(msg string) StreamTerminationError {
+func NewStreamTerminationError(msg string) *StreamTerminationError {
 	err := errors.New(msg)
-	return StreamTerminationError{
+	return &StreamTerminationError{
 		Err: err,
 	}
 }
