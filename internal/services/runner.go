@@ -29,7 +29,6 @@ type runnerServiceParams struct {
 
 type runnerService struct {
 	start          time.Time
-	end            time.Time
 	shutdowner     fx.Shutdowner
 	logger         infrastructure.ILogger
 	streamCursor   IStreamCursorService
@@ -160,8 +159,7 @@ func (s *runnerService) isNotRetryableError(err error) bool {
 }
 
 func (s *runnerService) shutdown() {
-	s.end = time.Now()
-	s.logger.Info(fmt.Sprintf("pipeline took %v", s.end.Sub(s.start)))
+	s.logger.Info(fmt.Sprintf("pipeline took %v", time.Now().Sub(s.start)))
 	s.logger.Info("shutting down in 5 seconds...")
 	time.Sleep(5 * time.Second)
 
