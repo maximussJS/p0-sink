@@ -113,6 +113,8 @@ func (s *batchSenderService) process(
 		return
 	}
 
+	s.logger.Info(fmt.Sprintf("Processed %s", batch.String()))
+
 	s.metrics.IncTotalBatchesSent()
 	s.metrics.IncTotalBytesSent(batch.BilledBytes)
 	s.metrics.IncTotalBlocksSent(batch.NumBlocks())
@@ -164,7 +166,7 @@ func (s *batchSenderService) commit(ctx context.Context, batch types.ProcessedBa
 
 		elapsed := time.Since(start)
 
-		s.logger.Info(fmt.Sprintf("Commited %s. Took %s", batch.String(), elapsed))
+		s.logger.Debug(fmt.Sprintf("Commited %s. Took %s", batch.String(), elapsed))
 
 		return status, nil
 	})
@@ -217,7 +219,7 @@ func (s *batchSenderService) sendWithRetry(
 
 		elapsed := time.Since(start)
 
-		s.logger.Info(fmt.Sprintf("Sent %s. Took %s", batch.String(), elapsed))
+		s.logger.Debug(fmt.Sprintf("Sent %s. Took %s", batch.String(), elapsed))
 
 		return nil
 	}

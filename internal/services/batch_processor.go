@@ -119,7 +119,7 @@ func (s *batchProcessorService) process(
 	ctx context.Context,
 	batch *types.Batch,
 ) (*types.ProcessedBatch, error) {
-	s.logger.Info(fmt.Sprintf("%s collected in %s", batch.String(), batch.TimeElapsed()))
+	s.logger.Debug(fmt.Sprintf("%s collected in %s", batch.String(), batch.TimeElapsed()))
 
 	downloadedBlocks, err := s.blockDownloader.GetDownloadedBlocksData(ctx, batch)
 
@@ -200,7 +200,7 @@ func (s *batchProcessorService) serialize(batch *types.Batch, blocks []*types.Do
 			return nil, 0, err
 		}
 
-		s.logger.Info(fmt.Sprintf("%s serialized in %s", batch.String(), time.Since(start)))
+		s.logger.Debug(fmt.Sprintf("%s serialized in %s", batch.String(), time.Since(start)))
 
 		return serialized, size, nil
 	})
