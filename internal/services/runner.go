@@ -28,6 +28,8 @@ type runnerServiceParams struct {
 }
 
 type runnerService struct {
+	start          time.Time
+	end            time.Time
 	shutdowner     fx.Shutdowner
 	logger         infrastructure.ILogger
 	streamCursor   IStreamCursorService
@@ -73,6 +75,7 @@ func (s *runnerService) stop(_ context.Context) error {
 }
 
 func (s *runnerService) runPipeline() {
+	s.start = time.Now()
 	pipelineCtx, pipelineCtxCancel := context.WithCancel(context.Background())
 
 	defer pipelineCtxCancel()
@@ -110,6 +113,7 @@ func (s *runnerService) runPipeline() {
 		case <-doneChannel:
 			s.logger.Info("stream has been processed successfully.")
 			pipelineCtxCancel()
+			childCtxCancel()
 			s.shutdown()
 			return
 		case <-pipelineCtx.Done():
@@ -156,6 +160,8 @@ func (s *runnerService) isNotRetryableError(err error) bool {
 }
 
 func (s *runnerService) shutdown() {
+	s.end = time.Now()
+	s.logger.Info(fmt.Sprintf("pipeline took %v", s.end.Sub(s.start)))
 	s.logger.Info("shutting down in 5 seconds...")
 	time.Sleep(5 * time.Second)
 
