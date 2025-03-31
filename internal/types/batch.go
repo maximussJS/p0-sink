@@ -112,7 +112,7 @@ func (b *Batch) String() string {
 	if err != nil {
 		panic(err)
 	}
-	return fmt.Sprintf("Batch [%d-%d]", from, to)
+	return fmt.Sprintf("Batch<Block> [%d-%d]", from, to)
 }
 
 func (b *Batch) verifyDirection(block *Block) error {

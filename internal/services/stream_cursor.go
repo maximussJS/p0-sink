@@ -97,7 +97,7 @@ func (s *streamCursorService) GetBlockRequest() (*pb.BlocksRequest, error) {
 
 	return &pb.BlocksRequest{
 		Lag:           &lag,
-		From:          &pb.BlocksRequest_FromBlockNumber{FromBlockNumber: 0},
+		From:          &pb.BlocksRequest_FromBlockNumber{FromBlockNumber: fromBlock},
 		ToBlockNumber: toBlock,
 		Dataset:       s.streamConfig.Dataset(),
 		OnReorg:       &reorgAction,

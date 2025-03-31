@@ -61,8 +61,8 @@ func newRunnerService(lc fx.Lifecycle, shutdowner fx.Shutdowner, params runnerSe
 	return r
 }
 
-func (s *runnerService) run(_ context.Context) error {
-	go s.runPipeline()
+func (s *runnerService) run(ctx context.Context) error {
+	go s.runPipeline(ctx)
 
 	return nil
 }
@@ -73,13 +73,12 @@ func (s *runnerService) stop(_ context.Context) error {
 	return nil
 }
 
-func (s *runnerService) runPipeline() {
+func (s *runnerService) runPipeline(ctx context.Context) {
 	s.start = time.Now()
-	pipelineCtx, pipelineCtxCancel := context.WithCancel(context.Background())
-
-	defer pipelineCtxCancel()
 	errorChannel := make(types.ErrorChannel, 1)
 	doneChannel := make(types.DoneChannel, 1)
+
+	var err error
 
 	for attempt := 1; attempt <= constants.PIPELINE_RETRY_MAX_ATTEMPTS; attempt++ {
 		if attempt == 1 {
@@ -88,35 +87,19 @@ func (s *runnerService) runPipeline() {
 			s.logger.Info(fmt.Sprintf("retrying pipeline, attempt %d", attempt))
 		}
 
-		childCtx, childCtxCancel := context.WithCancel(pipelineCtx)
+		childCtx, childCtxCancel := context.WithCancel(ctx)
 
 		childCtx = context_utils.SetAttempt(childCtx, attempt)
 
-		blockRequest, err := s.streamCursor.GetBlockRequest()
-
-		if err != nil {
-			errorChannel <- err
-		}
-
-		s.logger.Debug(fmt.Sprintf("block request: %v", blockRequest))
-
-		blocksChannel := s.blockStream.Channel(childCtx, blockRequest, errorChannel)
-
-		batchChannel := s.batch.Channel(childCtx, blocksChannel, errorChannel)
-
-		processedBatchChannel := s.batchProcessor.Channel(childCtx, batchChannel, errorChannel)
-
-		s.batchSender.ProcessChannel(childCtx, processedBatchChannel, doneChannel, errorChannel)
+		s.startStream(childCtx, childCtxCancel, doneChannel, errorChannel)
 
 		select {
 		case <-doneChannel:
 			s.logger.Info("stream has been processed successfully.")
-			pipelineCtxCancel()
 			childCtxCancel()
 			s.shutdown()
 			return
-		case <-pipelineCtx.Done():
-			pipelineCtxCancel()
+		case <-ctx.Done():
 			childCtxCancel()
 			s.logger.Info("context cancelled. stopping pipeline.")
 			s.shutdown()
@@ -126,7 +109,6 @@ func (s *runnerService) runPipeline() {
 
 			if attempt == constants.PIPELINE_RETRY_MAX_ATTEMPTS {
 				s.logger.Error("pipeline failed after max attempts")
-				pipelineCtxCancel()
 				childCtxCancel()
 				s.shutdown()
 				return
@@ -134,7 +116,6 @@ func (s *runnerService) runPipeline() {
 
 			if s.isNotRetryableError(err) {
 				s.logger.Error(fmt.Sprintf("stopping pipeline because of non-retryable error: %v", err))
-				pipelineCtxCancel()
 				childCtxCancel()
 				s.shutdown()
 				return
@@ -148,6 +129,26 @@ func (s *runnerService) runPipeline() {
 	}
 }
 
+func (s *runnerService) startStream(ctx context.Context, cancelFunc context.CancelFunc, doneChannel types.DoneChannel, errorChannel types.ErrorChannel) {
+	blockRequest, err := s.streamCursor.GetBlockRequest()
+
+	if err != nil {
+		errorChannel <- err
+		cancelFunc()
+		return
+	}
+
+	s.logger.Debug(fmt.Sprintf("block request: %v", blockRequest))
+
+	blocksChannel := s.blockStream.Channel(ctx, blockRequest, errorChannel)
+
+	batchChannel := s.batch.Channel(ctx, blocksChannel, errorChannel)
+
+	processedBatchChannel := s.batchProcessor.Channel(ctx, batchChannel, errorChannel)
+
+	s.batchSender.ProcessChannel(ctx, processedBatchChannel, doneChannel, errorChannel)
+}
+
 func (s *runnerService) isNotRetryableError(err error) bool {
 	terminationErr, ok := err.(*custom_errors.StreamTerminationError)
 	if ok {
@@ -159,13 +160,13 @@ func (s *runnerService) isNotRetryableError(err error) bool {
 }
 
 func (s *runnerService) shutdown() {
-	s.logger.Info(fmt.Sprintf("pipeline took %v", time.Now().Sub(s.start)))
+	s.logger.Info(fmt.Sprintf("pipeline took %v", time.Since(s.start)))
 	s.logger.Info("shutting down in 5 seconds...")
 	time.Sleep(5 * time.Second)
 
 	err := s.shutdowner.Shutdown()
 
 	if err != nil {
-		panic(fmt.Sprintf("error shutting down: %v", err))
+		s.logger.Error(fmt.Sprintf("error shutting down: %v", err))
 	}
 }

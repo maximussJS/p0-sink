@@ -59,9 +59,9 @@ func (s *ProcessedBatch) NumBlocks() int {
 }
 
 func (s *ProcessedBatch) String() string {
-	return fmt.Sprintf("ProcessedBatch [%d-%d]", s.BlockNumbers[0], s.BlockNumbers[len(s.BlockNumbers)-1])
+	return fmt.Sprintf("Batch [%d-%d]", s.BlockNumbers[0], s.BlockNumbers[len(s.BlockNumbers)-1])
 }
 
 func (s *ProcessedBatch) LongString() string {
-	return fmt.Sprintf("ProcessedBatch [%v]", s.BlockNumbers)
+	return fmt.Sprintf("Batch [%v]", s.BlockNumbers)
 }
