@@ -91,11 +91,12 @@ func (s *streamCursorService) Commit(ctx context.Context, batch types.ProcessedB
 }
 
 func (s *streamCursorService) GetBlockRequest() (*pb.BlocksRequest, error) {
+	fromBlock, toBlock, lag := s.streamConfig.BlocksRange()
+
+	reorgAction := s.streamConfig.ReorgAction()
+
 	// for testing purposes
-	//fromBlock, toBlock, lag := s.streamConfig.BlocksRange()
-	//
-	//reorgAction := s.streamConfig.ReorgAction()
-	//
+
 	//return &pb.BlocksRequest{
 	//	Lag:           &lag,
 	//	From:          &pb.BlocksRequest_FromBlockNumber{FromBlockNumber: fromBlock},
