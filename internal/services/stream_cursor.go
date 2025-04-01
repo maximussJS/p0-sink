@@ -91,19 +91,20 @@ func (s *streamCursorService) Commit(ctx context.Context, batch types.ProcessedB
 }
 
 func (s *streamCursorService) GetBlockRequest() (*pb.BlocksRequest, error) {
-	fromBlock, toBlock, lag := s.streamConfig.BlocksRange()
-
-	reorgAction := s.streamConfig.ReorgAction()
-
-	return &pb.BlocksRequest{
-		Lag:           &lag,
-		From:          &pb.BlocksRequest_FromBlockNumber{FromBlockNumber: fromBlock},
-		ToBlockNumber: toBlock,
-		Dataset:       s.streamConfig.Dataset(),
-		OnReorg:       &reorgAction,
-		Format:        string(enums.DatasetFormatJSON),
-		Compression:   string(enums.ECompressionGzip),
-	}, nil
+	// for testing purposes
+	//fromBlock, toBlock, lag := s.streamConfig.BlocksRange()
+	//
+	//reorgAction := s.streamConfig.ReorgAction()
+	//
+	//return &pb.BlocksRequest{
+	//	Lag:           &lag,
+	//	From:          &pb.BlocksRequest_FromBlockNumber{FromBlockNumber: fromBlock},
+	//	ToBlockNumber: toBlock,
+	//	Dataset:       s.streamConfig.Dataset(),
+	//	OnReorg:       &reorgAction,
+	//	Format:        string(enums.DatasetFormatJSON),
+	//	Compression:   string(enums.ECompressionGzip),
+	//}, nil
 
 	if s.ReachedEnd() {
 		return nil, errors.NewStreamTerminationError("stream reached end")

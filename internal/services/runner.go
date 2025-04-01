@@ -61,8 +61,8 @@ func newRunnerService(lc fx.Lifecycle, shutdowner fx.Shutdowner, params runnerSe
 	return r
 }
 
-func (s *runnerService) run(ctx context.Context) error {
-	go s.runPipeline(ctx)
+func (s *runnerService) run(_ context.Context) error {
+	go s.runPipeline()
 
 	return nil
 }
@@ -73,10 +73,13 @@ func (s *runnerService) stop(_ context.Context) error {
 	return nil
 }
 
-func (s *runnerService) runPipeline(ctx context.Context) {
+func (s *runnerService) runPipeline() {
 	s.start = time.Now()
 	errorChannel := make(types.ErrorChannel, 1)
 	doneChannel := make(types.DoneChannel, 1)
+
+	pipelineCtx, pipelineCtxCancel := context.WithCancel(context.Background())
+	defer pipelineCtxCancel()
 
 	var err error
 
@@ -87,7 +90,7 @@ func (s *runnerService) runPipeline(ctx context.Context) {
 			s.logger.Info(fmt.Sprintf("retrying pipeline, attempt %d", attempt))
 		}
 
-		childCtx, childCtxCancel := context.WithCancel(ctx)
+		childCtx, childCtxCancel := context.WithCancel(pipelineCtx)
 
 		childCtx = context_utils.SetAttempt(childCtx, attempt)
 
@@ -99,7 +102,7 @@ func (s *runnerService) runPipeline(ctx context.Context) {
 			childCtxCancel()
 			s.shutdown()
 			return
-		case <-ctx.Done():
+		case <-pipelineCtx.Done():
 			childCtxCancel()
 			s.logger.Info("context cancelled. stopping pipeline.")
 			s.shutdown()

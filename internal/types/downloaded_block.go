@@ -30,3 +30,7 @@ func (b *DownloadedBlock) String() string {
 func (b *DownloadedBlock) IsEmpty() bool {
 	return b.Block == nil || b.Data == nil
 }
+
+func (b *DownloadedBlock) BlockNumber() uint64 {
+	return b.Block.BlockNumber
+}

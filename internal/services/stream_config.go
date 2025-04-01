@@ -93,7 +93,7 @@ func (s *streamConfig) Id() string {
 }
 
 func (s *streamConfig) GrpcUrl() string {
-	return "ssl://eth-bs.internal.troiszero.net"
+	//return "ssl://eth-bs.internal.troiszero.net" for testing
 	return s.stream.Network.BlockStreamGrpcUrl
 }
 

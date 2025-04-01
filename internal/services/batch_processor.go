@@ -11,6 +11,7 @@ import (
 	"p0-sink/internal/lib/serializers"
 	"p0-sink/internal/types"
 	fx_utils "p0-sink/internal/utils/fx"
+	"sync"
 	"time"
 )
 
@@ -38,12 +39,12 @@ type batchProcessorService struct {
 	outputCompressor compressors.ICompressor
 	serializer       serializers.ISerializer
 	streamConfig     IStreamConfig
+	pool             pond.Pool
 	metrics          IMetricsService
 	blockFunction    IBlockFunctionService
 	blockDownloader  IBlockDownloaderService
 	logger           infrastructure.ILogger
 	encoding         string
-	pool             pond.Pool
 	httpClient       *lib.HttpClient
 }
 
@@ -58,6 +59,7 @@ func newBatchProcessor(lc fx.Lifecycle, params batchProcessorServiceParams) IBat
 		blockFunction:   params.BlockFunction,
 		logger:          params.Logger,
 		metrics:         params.Metrics,
+		pool:            pond.NewPool(100),
 	}
 
 	lc.Append(fx.Hook{
@@ -145,43 +147,62 @@ func (s *batchProcessorService) process(
 func (s *batchProcessorService) processDownloadedBlocks(
 	downloadedBlocks []*types.DownloadedBlock,
 ) ([]*types.DownloadedBlock, error) {
-	data := make([]*types.DownloadedBlock, 0)
+	var (
+		wg       sync.WaitGroup
+		results  = make([]*types.DownloadedBlock, len(downloadedBlocks))
+		errOnce  sync.Once
+		firstErr error
+	)
 
-	for _, block := range downloadedBlocks {
-		if s.streamConfig.FunctionEnabled() {
-			decompressedData, err := s.decompress(block.Data)
+	for i, block := range downloadedBlocks {
+		i := i
+		block := block
+		wg.Add(1)
 
-			if err != nil {
-				return nil, err
+		s.pool.Submit(func() {
+			defer wg.Done()
+
+			var result *types.DownloadedBlock
+			var err error
+
+			if s.streamConfig.FunctionEnabled() {
+				var decompressedData []byte
+				decompressedData, err = s.decompress(block.Data)
+				if err == nil {
+					var processedData []byte
+					processedData, err = s.blockFunction.ApplyFunction(decompressedData)
+					if err == nil {
+						var compressedData []byte
+						compressedData, err = s.compress(processedData)
+						if err == nil {
+							result = types.CopyWithNewData(block, compressedData)
+						}
+					}
+				}
+			} else {
+				var blockData []byte
+				blockData, err = s.inputToOutputCompress(block.Data)
+				if err == nil {
+					result = types.CopyWithNewData(block, blockData)
+				}
 			}
 
-			processedData, err := s.blockFunction.ApplyFunction(decompressedData)
-
 			if err != nil {
-				return nil, err
+				errOnce.Do(func() { firstErr = err })
+				return
 			}
 
-			compressedData, err := s.compress(processedData)
-
-			if err != nil {
-				return nil, err
-			}
-
-			data = append(data, types.CopyWithNewData(block, compressedData))
-
-			continue
-		}
-
-		blockData, err := s.inputToOutputCompress(block.Data)
-
-		if err != nil {
-			return nil, err
-		}
-
-		data = append(data, types.CopyWithNewData(block, blockData))
+			results[i] = result
+		})
 	}
 
-	return data, nil
+	wg.Wait()
+
+	if firstErr != nil {
+		return nil, firstErr
+	}
+
+	return results, nil
 }
 
 func (s *batchProcessorService) serialize(batch *types.Batch, blocks []*types.DownloadedBlock) ([]byte, int, error) {
